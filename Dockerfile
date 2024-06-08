@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y \
     wget \
     nano \
     nmap \
-    ncat \
+    # ncat \
+    netcat \
     mtr \
     iproute2 \
     tcpdump \
