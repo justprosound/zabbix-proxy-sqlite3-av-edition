@@ -1,3 +1,3 @@
 #!/bin/bash
 
-echo -n "$1" | ncat -w1 $2 $3
+echo -n "$1" | nc -w1 $2 $3
