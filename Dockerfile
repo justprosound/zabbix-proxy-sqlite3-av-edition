@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     nano \
     nmap \
     # ncat \
-    netcat \
+    netcat-openbsd \
     mtr \
     iproute2 \
     tcpdump \
