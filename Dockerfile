@@ -15,7 +15,11 @@ RUN apt-get update && apt-get install -y \
     mtr \
     iproute2 \
     tcpdump \
-    snmp
+    snmp \
+    snmp-mibs-downloader \
+    jq \
+    jo \
+    expect
 RUN curl -o speedtest.tgz https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-x86_64.tgz && tar -xvf speedtest.tgz && mv speedtest /usr/local/bin/speedtest
 COPY --chown=1997 --chmod=0711 ./scripts/* /usr/lib/zabbix/externalscripts/
 USER 1997
