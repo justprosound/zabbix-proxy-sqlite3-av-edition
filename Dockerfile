@@ -1,4 +1,5 @@
-FROM zabbix/zabbix-proxy-sqlite3:ubuntu-7.2.0
+ARG ZABBIX_VERSION
+FROM zabbix/zabbix-proxy-sqlite3:ubuntu-${ZABBIX_VERSION}
 USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update && apt-get install -y \
