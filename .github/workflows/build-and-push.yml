@@ -37,9 +37,9 @@ jobs:
           load-mode: strict
       - name: Some other action
         run: |
-          echo "Zabbix Version: ${{ env.ZABBIX_IMAGE }}"
+          echo "Zabbix Version: ${{ env.ZABBIX_VERSION }}"
       - name: Build image
-        run: docker build --build-arg ZABBIX_IMAGE=${{ env.ZABBIX_IMAGE }} . --file Dockerfile --tag $IMAGE_NAME/${{ env.ZABBIX_IMAGE }} --label "runnumber=${GITHUB_RUN_ID}"
+        run: docker build --build-arg ZABBIX_VERSION=${{ env.ZABBIX_VERSION }} . --file Dockerfile --tag $IMAGE_NAME/${{ env.ZABBIX_VERSION }} --label "runnumber=${GITHUB_RUN_ID}"
 
       - name: Log in to registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
