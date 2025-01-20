@@ -30,9 +30,17 @@ jobs:
       #
     steps:
       - uses: actions/checkout@v4
-
+      - name: Load .env file
+        uses: xom9ikk/dotenv@v2.3.0
+        with:
+          path: /
+          mode: development
+          load-mode: strict
+      - name: Some other action
+        run: |
+          echo "Zabbix Version: ${{ env.ZABBIX_IMAGE }}"
       - name: Build image
-        run: docker build . --file Dockerfile --tag $IMAGE_NAME --label "runnumber=${GITHUB_RUN_ID}"
+        run: docker build --build-arg ZABBIX_IMAGE=${{ env.ZABBIX_IMAGE }} . --file Dockerfile --tag $IMAGE_NAME/${{ env.ZABBIX_IMAGE }} --label "runnumber=${GITHUB_RUN_ID}"
 
       - name: Log in to registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
