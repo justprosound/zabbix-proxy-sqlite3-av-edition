@@ -15,7 +15,7 @@ on:
   pull_request:
 
 env:
-  IMAGE_NAME: zabbix-proxy
+  IMAGE_NAME: zabbix-proxy-sqlite3
 #
 jobs:
   # This pushes the image to GitHub Packages.
