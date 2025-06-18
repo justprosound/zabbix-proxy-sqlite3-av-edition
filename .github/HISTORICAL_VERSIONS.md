@@ -9,7 +9,8 @@ This project provides a GitHub Action workflow to build historical Zabbix versio
 3. Click "Run workflow"
 4. Enter the minimum version to start building from (defaults to 7.0.0)
 5. Optionally check "Force rebuild" to rebuild even if images already exist
-6. Click "Run workflow" to start the process
+6. Optionally provide a custom image name (e.g., "my-registry.com/user/repo")
+7. Click "Run workflow" to start the process
 
 The workflow will:
 1. Fetch all available Zabbix versions from the Zabbix API
@@ -21,10 +22,20 @@ The workflow will:
 
 ## Available Historical Versions
 
-After running the workflow, historical versions will be available with the same tag format as current versions:
+After running the workflow, historical versions will be available with the following tag format:
 
+### Default Image Name
+By default, images will be published to the GitHub Container Registry:
 ```
-ghcr.io/bandwith/zabbix-proxy-sqlite3:ubuntu-X.Y.Z
+ghcr.io/<repository-owner>/<derived-image-name>:ubuntu-X.Y.Z
+```
+
+The image name will be automatically derived based on your repository name, ensuring compatibility when forking the repository. The workflow is intelligent enough to extract meaningful name components from your repository name.
+
+### Custom Image Name
+If you provide a custom image name (e.g., "my-registry.com/user/repo"), images will be published as:
+```
+my-registry.com/user/repo:ubuntu-X.Y.Z
 ```
 
 Where X.Y.Z is the Zabbix version (e.g., 7.0.0, 7.0.1, etc.)
@@ -36,6 +47,7 @@ Where X.Y.Z is the Zabbix version (e.g., 7.0.0, 7.0.1, etc.)
 - The workflow checks if the upstream images exist before attempting to build
 - When you select a version like 7.0.9, the workflow will automatically expand this to build all patch releases in that series (7.0.0 through 7.0.9)
 - This ensures complete coverage of all minor releases without having to manually specify each version
+- You can specify a custom image name/location using the "custom_image_name" parameter (e.g., "my-registry.com/user/repo")
 
 This feature is useful for:
 - Environment consistency when upgrading gradually

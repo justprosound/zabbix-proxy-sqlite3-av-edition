@@ -10,8 +10,9 @@ on:
         required: true
         type: string
       is_latest:
-        required: true
+        required: false
         type: string
+        default: 'false'
         description: "Whether this is the LTS version (as a string 'true' or 'false')"
       latest_version:
         required: true
@@ -38,7 +39,8 @@ jobs:
       release_id: ${{ steps.create_release.outputs.id }}
       release_tag: ${{ steps.local_version.outputs.local_version }}
     env:
-      IMAGE_NAME: zabbix-proxy-sqlite3
+      # Allow for customizing the image name through environment variables or use a smart default
+      IMAGE_NAME: ${{ vars.REPO_NAME || 'zabbix-proxy-sqlite3' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -178,8 +180,8 @@ jobs:
           # - LTS tag if applicable
           # - Latest tag if applicable
           tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.local_version.outputs.local_version }}
-            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ inputs.major_minor }}
+            ${{ format('ghcr.io/{0}/{1}:{2}', github.repository_owner, env.IMAGE_NAME, steps.local_version.outputs.local_version) }}
+            ${{ format('ghcr.io/{0}/{1}:{2}', github.repository_owner, env.IMAGE_NAME, inputs.major_minor) }}
             ${{ steps.local_version.outputs.is_local_change == 'false' && format('ghcr.io/{0}/{1}:{2}', github.repository_owner, env.IMAGE_NAME, inputs.zabbix_version) || '' }}
             ${{ inputs.is_latest == 'true' && format('ghcr.io/{0}/{1}:lts', github.repository_owner, env.IMAGE_NAME) || '' }}
             ${{ inputs.zabbix_version == inputs.latest_version && format('ghcr.io/{0}/{1}:latest', github.repository_owner, env.IMAGE_NAME) || '' }}

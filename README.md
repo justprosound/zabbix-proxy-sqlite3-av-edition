@@ -102,14 +102,16 @@ Historical versions (7.0.0+) can be built on demand using the "Build Historical 
 #### GitHub Container Registry (Recommended)
 ```bash
 # Pull the latest version (highest version number)
-docker pull ghcr.io/bandwith/zabbix-proxy-sqlite3:latest
+docker pull ghcr.io/GITHUB_USERNAME/zabbix-proxy-sqlite3:latest
 
 # Pull the LTS version (most stable)
-docker pull ghcr.io/bandwith/zabbix-proxy-sqlite3:lts
+docker pull ghcr.io/GITHUB_USERNAME/zabbix-proxy-sqlite3:lts
 
 # Pull a specific version
-docker pull ghcr.io/bandwith/zabbix-proxy-sqlite3:7.0.13
+docker pull ghcr.io/GITHUB_USERNAME/zabbix-proxy-sqlite3:7.0.13
 ```
+
+> **Note**: Replace `GITHUB_USERNAME` with your GitHub username/organization when using a fork of this repository. The image name will be automatically adjusted based on your repository name.
 
 ## 🛠️ Enhanced Features
 

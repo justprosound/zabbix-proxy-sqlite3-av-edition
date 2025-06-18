@@ -12,6 +12,10 @@ on:
         required: false
         type: boolean
         default: false
+      custom_image_name:
+        description: 'Optional custom image name (e.g. "my-registry.com/user/repo")'
+        required: false
+        default: ''
 
 # Security: Minimal required permissions
 permissions:
@@ -24,7 +28,11 @@ permissions:
 env:
   # Security: Define allowed registries
   ALLOWED_REGISTRIES: "ghcr.io"
-  IMAGE_NAME: "ghcr.io/${{ github.repository_owner }}/zabbix-proxy-sqlite3-av-edition"
+  REGISTRY: "ghcr.io"
+  # Default repo name, overridable via custom_image_name
+  REPO_NAME: "zabbix-proxy-sqlite3"
+  # Default base name for documentation and references
+  BASE_NAME: "Zabbix Proxy SQLite3 AV Edition"
 
 jobs:
   fetch-historical-versions:
@@ -108,12 +116,54 @@ jobs:
       matrix: ${{ fromJson(needs.fetch-historical-versions.outputs.matrix) }}
       fail-fast: false
     steps:
+      - name: Set image name
+        id: set-image-name
+        run: |
+          # Check if a custom image name was provided
+          CUSTOM_IMAGE_NAME="${{ inputs.custom_image_name }}"
+
+          if [ -n "$CUSTOM_IMAGE_NAME" ]; then
+            # Use the custom image name
+            IMAGE_NAME="$CUSTOM_IMAGE_NAME"
+            echo "Using custom image name: $IMAGE_NAME"
+            # Extract repo name from custom image for documentation purposes
+            REPO_SHORT_NAME=$(echo "$CUSTOM_IMAGE_NAME" | awk -F'/' '{print $NF}')
+            echo "Using custom repo short name: $REPO_SHORT_NAME"
+            echo "repo_short_name=${REPO_SHORT_NAME}" >> $GITHUB_OUTPUT
+          else
+            # Use default naming pattern
+            REGISTRY="${{ env.REGISTRY }}"
+            REPO_NAME="${{ env.REPO_NAME }}"
+            REPO_OWNER="${{ github.repository_owner }}"
+
+            # Get actual repository name from github.repository
+            ACTUAL_REPO="${{ github.repository }}"
+            ACTUAL_REPO_NAME="${ACTUAL_REPO#*/}"
+
+            # Use repo name from actual repository if it doesn't match the default
+            if [[ "$ACTUAL_REPO_NAME" != "zabbix-proxy-sqlite3-av-edition" ]]; then
+              echo "Repository name differs from default, using actual name: $ACTUAL_REPO_NAME"
+              # Try to extract a meaningful name - remove common prefixes/suffixes
+              CLEANED_NAME=$(echo "$ACTUAL_REPO_NAME" | sed -E 's/(zabbix|proxy|sqlite|edition|av)[-_]?//gi' | sed -E 's/[-_]?(zabbix|proxy|sqlite|edition|av)//gi')
+              if [[ -n "$CLEANED_NAME" && "$CLEANED_NAME" != "$ACTUAL_REPO_NAME" ]]; then
+                REPO_NAME="${CLEANED_NAME}-${REPO_NAME}"
+              fi
+            fi
+
+            # Set the full image name
+            IMAGE_NAME="${REGISTRY}/${REPO_OWNER}/${REPO_NAME}"
+            echo "Using default image name: $IMAGE_NAME"
+            echo "repo_short_name=${REPO_NAME}" >> $GITHUB_OUTPUT
+          fi
+
+          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+
       - name: Check if image already exists
         id: check-image
         run: |
           ZABBIX_VERSION="${{ matrix.zabbix_version }}"
           IMAGE_TAG="ubuntu-$ZABBIX_VERSION"
-          FULL_IMAGE="${{ env.IMAGE_NAME }}:$IMAGE_TAG"
+          FULL_IMAGE="${{ steps.set-image-name.outputs.image_name }}:$IMAGE_TAG"
 
           echo "Checking if image $FULL_IMAGE exists"
 
@@ -187,21 +237,21 @@ jobs:
             VERSIONS=$(cat /tmp/artifacts/versions_to_build.txt 2>/dev/null || echo "")
             if [ -n "$VERSIONS" ]; then
               echo "Found base versions to build: $VERSIONS"
-              
+
               # Create a temporary directory to hold expanded versions
               mkdir -p /tmp/expanded_versions
-              
+
               # Process each version to expand its major.minor series
               EXPANDED_VERSIONS=""
-              
+
               # Process each version
               echo "$VERSIONS" | sort -V | while read -r VERSION; do
                 # Extract major.minor from version
                 MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
                 PATCH=$(echo "$VERSION" | cut -d. -f3)
-                
+
                 echo "Processing version $VERSION (Major.Minor: $MAJOR_MINOR, Patch: $PATCH)"
-                
+
                 # Generate sequence from 0 to patch for this major.minor
                 for ((i=0; i<=$PATCH; i++)); do
                   FULL_VERSION="$MAJOR_MINOR.$i"
@@ -209,27 +259,27 @@ jobs:
                   echo "$FULL_VERSION" >> /tmp/expanded_versions/all_versions.txt
                 done
               done
-              
+
               # Remove duplicates and sort
               if [ -f "/tmp/expanded_versions/all_versions.txt" ]; then
                 EXPANDED_VERSIONS=$(sort -V -u /tmp/expanded_versions/all_versions.txt)
                 echo "Expanded versions to check: $EXPANDED_VERSIONS"
-                
+
                 # Generate JSON matrix with expanded versions
                 MATRIX_JSON=$(echo "$EXPANDED_VERSIONS" | jq -Rs '
-                  split("\n") 
-                  | map(select(length > 0)) 
+                  split("\n")
+                  | map(select(length > 0))
                   | map({
-                      "zabbix_version": .,  
-                      "major_minor": (split(".") | .[0:2] | join(".") | tostring), 
+                      "zabbix_version": .,
+                      "major_minor": (split(".") | .[0:2] | join(".") | tostring),
                       "is_latest": "false"
-                    }) 
+                    })
                   | {"include": .}
                 ' | tr -d '\n')
-                
+
                 echo "Generated expanded build matrix:"
                 echo "$MATRIX_JSON" | jq .
-                
+
                 echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
               else
                 echo "No expanded versions generated"
@@ -253,40 +303,91 @@ jobs:
     with:
       zabbix_version: ${{ matrix.zabbix_version }}
       major_minor: ${{ matrix.major_minor }}
-      is_latest: 'false'
-      latest_version: ''  # Not needed for historical builds
+      latest_version: ${{ matrix.zabbix_version }}  # Set to current version
 
   summary:
     needs: collect-missing-versions
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Set image name
+        id: set-image-name
+        run: |
+          # Check if a custom image name was provided
+          CUSTOM_IMAGE_NAME="${{ inputs.custom_image_name }}"
+
+          if [ -n "$CUSTOM_IMAGE_NAME" ]; then
+            # Use the custom image name
+            IMAGE_NAME="$CUSTOM_IMAGE_NAME"
+            echo "Using custom image name: $IMAGE_NAME"
+            # Extract repo name from custom image for documentation purposes
+            REPO_SHORT_NAME=$(echo "$CUSTOM_IMAGE_NAME" | awk -F'/' '{print $NF}')
+            echo "Using custom repo short name: $REPO_SHORT_NAME"
+            echo "repo_short_name=${REPO_SHORT_NAME}" >> $GITHUB_OUTPUT
+          else
+            # Use default naming pattern
+            REGISTRY="${{ env.REGISTRY }}"
+            REPO_NAME="${{ env.REPO_NAME }}"
+            REPO_OWNER="${{ github.repository_owner }}"
+
+            # Get actual repository name from github.repository
+            ACTUAL_REPO="${{ github.repository }}"
+            ACTUAL_REPO_NAME="${ACTUAL_REPO#*/}"
+
+            # Use repo name from actual repository if it doesn't match the default
+            if [[ "$ACTUAL_REPO_NAME" != "zabbix-proxy-sqlite3-av-edition" ]]; then
+              echo "Repository name differs from default, using actual name: $ACTUAL_REPO_NAME"
+              # Try to extract a meaningful name - remove common prefixes/suffixes
+              CLEANED_NAME=$(echo "$ACTUAL_REPO_NAME" | sed -E 's/(zabbix|proxy|sqlite|edition|av)[-_]?//gi' | sed -E 's/[-_]?(zabbix|proxy|sqlite|edition|av)//gi')
+              if [[ -n "$CLEANED_NAME" && "$CLEANED_NAME" != "$ACTUAL_REPO_NAME" ]]; then
+                REPO_NAME="${CLEANED_NAME}-${REPO_NAME}"
+              fi
+            fi
+
+            # Set the full image name
+            IMAGE_NAME="${REGISTRY}/${REPO_OWNER}/${REPO_NAME}"
+            echo "Using default image name: $IMAGE_NAME"
+            echo "repo_short_name=${REPO_NAME}" >> $GITHUB_OUTPUT
+          fi
+
+          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+
       - name: Summarize build results
         run: |
           echo "# Historical Version Build Results" >> $GITHUB_STEP_SUMMARY
 
+          # Show image name information
+          IMAGE_NAME="${{ steps.set-image-name.outputs.image_name }}"
+          echo "## Image Information" >> $GITHUB_STEP_SUMMARY
+          echo "Images will be built with name: **$IMAGE_NAME**" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "${{ inputs.custom_image_name }}" ]; then
+            echo "*(Using custom image name provided in workflow inputs)*" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
           MATRIX='${{ needs.collect-missing-versions.outputs.matrix }}'
           if [ "$(echo "$MATRIX" | jq '.include | length')" -gt 0 ]; then
             VERSIONS_COUNT=$(echo "$MATRIX" | jq '.include | length')
-            
+
             echo "## Versions Queued for Building" >> $GITHUB_STEP_SUMMARY
             echo "Total versions to build: $VERSIONS_COUNT" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "This workflow expands each version to build all previous patch releases in the same major.minor series." >> $GITHUB_STEP_SUMMARY
             echo "For example, if version 7.0.9 is selected for building, the workflow will also build versions 7.0.0 through 7.0.8." >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            
+
             # Extract and display versions by major.minor groups
             echo "### Versions by Release Series" >> $GITHUB_STEP_SUMMARY
-            
+
             # Get all major.minor values and sort them
             MAJOR_MINORS=$(echo "$MATRIX" | jq -r '.include[].major_minor' | sort -V -u)
-            
+
             for MM in $MAJOR_MINORS; do
               # Get all versions for this major.minor
               MM_VERSIONS=$(echo "$MATRIX" | jq -r --arg mm "$MM" '.include[] | select(.major_minor == $mm) | .zabbix_version' | sort -V)
               MM_COUNT=$(echo "$MM_VERSIONS" | wc -l)
-              
+
               echo "#### $MM Series ($MM_COUNT versions)" >> $GITHUB_STEP_SUMMARY
               echo '```' >> $GITHUB_STEP_SUMMARY
               echo "$MM_VERSIONS" | tr '\n' ' ' >> $GITHUB_STEP_SUMMARY
