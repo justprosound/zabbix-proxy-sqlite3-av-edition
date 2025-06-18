@@ -87,8 +87,15 @@ volumes:
 |---------|---------------|----------------|----------------|
 | **7.0.13** | `lts`, `7.0.13`, `7.0` | 7.0 LTS | ✅ **Long-Term Support** |
 | **7.2.7** | `latest`, `7.2.7`, `7.2` | 7.2 Stable | ✅ Latest Features |
+| **Historical** | `ubuntu-X.Y.Z` | 7.0.0+ | 🔄 Available on demand |
 
 > **📌 Note**: The `latest` tag points to the **highest version number (7.2.7)**, while the `lts` tag points to the **LTS version (7.0.13)** for maximum stability in production environments. Check the [Zabbix release notes](https://www.zabbix.com/release_notes) for detailed version differences.
+
+### 🕰️ Historical Versions
+
+Historical versions (7.0.0+) can be built on demand using the "Build Historical Versions" GitHub workflow. These versions maintain compatibility with older Zabbix server deployments.
+
+[Learn more about historical versions](.github/HISTORICAL_VERSIONS.md)
 
 ### 🐳 Container Registries
 
