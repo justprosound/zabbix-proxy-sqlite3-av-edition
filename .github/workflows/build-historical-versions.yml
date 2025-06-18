@@ -1,0 +1,246 @@
+name: Build Historical Versions
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_version:
+        description: 'Minimum version to start building from (e.g. 7.0.0)'
+        required: true
+        default: '7.0.0'
+      force_rebuild:
+        description: 'Force rebuild even if image already exists'
+        required: false
+        type: boolean
+        default: false
+
+# Security: Minimal required permissions
+permissions:
+  contents: write
+  packages: write
+  actions: read
+  id-token: write
+  security-events: write  # For security scanning
+
+env:
+  # Security: Define allowed registries
+  ALLOWED_REGISTRIES: "ghcr.io"
+  IMAGE_NAME: "ghcr.io/${{ github.repository_owner }}/zabbix-proxy-sqlite3-av-edition"
+
+jobs:
+  fetch-historical-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch Zabbix version data
+        run: |
+          echo "Fetching data from Zabbix API..."
+          mkdir -p .github
+          curl -s -f -S "https://services.zabbix.com/updates/v1" > .github/zabbix-versions.json || {
+            echo "::error::Failed to fetch Zabbix version data from API"
+            exit 1
+          }
+
+          # Validate the JSON response
+          if ! jq . .github/zabbix-versions.json > /dev/null; then
+            echo "::error::Invalid JSON received from Zabbix API"
+            cat .github/zabbix-versions.json | head -n 50
+            exit 1
+          fi
+
+      - name: Generate list of versions since ${{ inputs.min_version }}
+        id: generate-matrix
+        run: |
+          MIN_VERSION="${{ inputs.min_version }}"
+          echo "Generating list of versions starting from $MIN_VERSION"
+
+          # Extract all versions, including EOL ones
+          ALL_VERSIONS=$(jq -r '.versions[].latest_release.release' .github/zabbix-versions.json | sort -V)
+
+          # Filter versions >= MIN_VERSION
+          FILTERED_VERSIONS=$(echo "$ALL_VERSIONS" | awk -v min="$MIN_VERSION" '
+            function version_compare(ver1, ver2,    v1, v2, i) {
+              # Split versions by "."
+              split(ver1, v1, ".");
+              split(ver2, v2, ".");
+
+              # Compare each component
+              for (i = 1; i <= 3; i++) {
+                if (v1[i] + 0 < v2[i] + 0) return -1;
+                if (v1[i] + 0 > v2[i] + 0) return 1;
+              }
+              return 0;
+            }
+
+            version_compare($0, min) >= 0 { print $0 }
+          ')
+
+          echo "Versions to check: $FILTERED_VERSIONS"
+
+          # Get latest version (highest version number)
+          LATEST_VERSION=$(echo "$FILTERED_VERSIONS" | sort -V | tail -n1)
+
+          # Create matrix with version info
+          MATRIX_JSON=$(echo "$FILTERED_VERSIONS" | tr ' ' '\n' | grep -v '^$' | jq --arg latest "$LATEST_VERSION" -Rs '
+            split("\n")
+            | map(select(length > 0))
+            | map({
+                "zabbix_version": .,
+                "major_minor": (split(".") | .[0:2] | join(".") | tostring),
+                "is_latest": (if . == $latest then "true" else "false" end)
+              })
+            | {"include": .}
+          ' | tr -d '\n')
+
+          echo "Generated matrix:"
+          echo "$MATRIX_JSON" | jq .
+
+          echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
+
+  check-existing-images:
+    needs: fetch-historical-versions
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.fetch-historical-versions.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - name: Check if image already exists
+        id: check-image
+        run: |
+          ZABBIX_VERSION="${{ matrix.zabbix_version }}"
+          IMAGE_TAG="ubuntu-$ZABBIX_VERSION"
+          FULL_IMAGE="${{ env.IMAGE_NAME }}:$IMAGE_TAG"
+
+          echo "Checking if image $FULL_IMAGE exists"
+
+          # Try to get image manifest
+          if docker manifest inspect "$FULL_IMAGE" &>/dev/null; then
+            echo "Image $FULL_IMAGE already exists"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Image $FULL_IMAGE does not exist"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Check if upstream image exists
+          UPSTREAM_IMAGE="zabbix/zabbix-proxy-sqlite3:ubuntu-$ZABBIX_VERSION"
+          if docker manifest inspect "$UPSTREAM_IMAGE" &>/dev/null; then
+            echo "Upstream image $UPSTREAM_IMAGE exists"
+            echo "upstream_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Upstream image $UPSTREAM_IMAGE does not exist"
+            echo "upstream_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set build flag
+        id: set-build
+        run: |
+          FORCE_REBUILD="${{ inputs.force_rebuild }}"
+          IMAGE_EXISTS="${{ steps.check-image.outputs.exists }}"
+          UPSTREAM_EXISTS="${{ steps.check-image.outputs.upstream_exists }}"
+
+          # Build if:
+          # 1. Force rebuild is true OR
+          # 2. Image doesn't exist AND upstream image exists
+          if [[ "$FORCE_REBUILD" == "true" ]] || ([[ "$IMAGE_EXISTS" == "false" ]] && [[ "$UPSTREAM_EXISTS" == "true" ]]); then
+            echo "Need to build version ${{ matrix.zabbix_version }}"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "Skip building version ${{ matrix.zabbix_version }}"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Collect versions to build
+        if: steps.set-build.outputs.should_build == 'true'
+        run: |
+          echo "${{ matrix.zabbix_version }}" >> /tmp/versions_to_build.txt
+
+      - name: Upload versions to build
+        if: steps.set-build.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: versions-to-build-${{ matrix.zabbix_version }}
+          path: /tmp/versions_to_build.txt
+          retention-days: 1
+
+  collect-missing-versions:
+    needs: check-existing-images
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/artifacts
+          pattern: versions-to-build-*
+          merge-multiple: true
+
+      - name: Collect versions to build
+        id: generate-matrix
+        run: |
+          if [ -d "/tmp/artifacts" ] && [ -f "/tmp/artifacts/versions_to_build.txt" ]; then
+            VERSIONS=$(cat /tmp/artifacts/versions_to_build.txt 2>/dev/null || echo "")
+            if [ -n "$VERSIONS" ]; then
+              echo "Found versions to build: $VERSIONS"
+
+              # Generate JSON matrix
+              MATRIX_JSON=$(echo "$VERSIONS" | tr ' ' '\n' | grep -v '^$' | jq -Rs '
+                split("\n")
+                | map(select(length > 0))
+                | map({
+                    "zabbix_version": .,
+                    "major_minor": (split(".") | .[0:2] | join(".") | tostring),
+                    "is_latest": "false"
+                  })
+                | {"include": .}
+              ' | tr -d '\n')
+
+              echo "Generated build matrix:"
+              echo "$MATRIX_JSON" | jq .
+
+              echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
+            else
+              echo "No versions to build"
+              echo 'matrix={"include":[]}' >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No artifacts found"
+            echo 'matrix={"include":[]}' >> $GITHUB_OUTPUT
+          fi
+
+  build-missing-versions:
+    needs: collect-missing-versions
+    strategy:
+      matrix: ${{ fromJson(needs.collect-missing-versions.outputs.matrix) }}
+      fail-fast: false
+    uses: ./.github/workflows/_build-container.yml
+    with:
+      zabbix_version: ${{ matrix.zabbix_version }}
+      major_minor: ${{ matrix.major_minor }}
+      is_latest: 'false'
+      latest_version: ''  # Not needed for historical builds
+
+  summary:
+    needs: collect-missing-versions
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize build results
+        run: |
+          echo "# Historical Version Build Results" >> $GITHUB_STEP_SUMMARY
+
+          MATRIX='${{ needs.collect-missing-versions.outputs.matrix }}'
+          if [ "$(echo "$MATRIX" | jq '.include | length')" -gt 0 ]; then
+            echo "## Versions queued for building:" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            echo "$MATRIX" | jq . >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## No versions needed to be built" >> $GITHUB_STEP_SUMMARY
+            echo "All requested versions already exist or upstream images are not available." >> $GITHUB_STEP_SUMMARY
+          fi
