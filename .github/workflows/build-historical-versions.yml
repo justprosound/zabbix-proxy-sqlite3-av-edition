@@ -186,24 +186,55 @@ jobs:
           if [ -d "/tmp/artifacts" ] && [ -f "/tmp/artifacts/versions_to_build.txt" ]; then
             VERSIONS=$(cat /tmp/artifacts/versions_to_build.txt 2>/dev/null || echo "")
             if [ -n "$VERSIONS" ]; then
-              echo "Found versions to build: $VERSIONS"
-
-              # Generate JSON matrix
-              MATRIX_JSON=$(echo "$VERSIONS" | tr ' ' '\n' | grep -v '^$' | jq -Rs '
-                split("\n")
-                | map(select(length > 0))
-                | map({
-                    "zabbix_version": .,
-                    "major_minor": (split(".") | .[0:2] | join(".") | tostring),
-                    "is_latest": "false"
-                  })
-                | {"include": .}
-              ' | tr -d '\n')
-
-              echo "Generated build matrix:"
-              echo "$MATRIX_JSON" | jq .
-
-              echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
+              echo "Found base versions to build: $VERSIONS"
+              
+              # Create a temporary directory to hold expanded versions
+              mkdir -p /tmp/expanded_versions
+              
+              # Process each version to expand its major.minor series
+              EXPANDED_VERSIONS=""
+              
+              # Process each version
+              echo "$VERSIONS" | sort -V | while read -r VERSION; do
+                # Extract major.minor from version
+                MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
+                PATCH=$(echo "$VERSION" | cut -d. -f3)
+                
+                echo "Processing version $VERSION (Major.Minor: $MAJOR_MINOR, Patch: $PATCH)"
+                
+                # Generate sequence from 0 to patch for this major.minor
+                for ((i=0; i<=$PATCH; i++)); do
+                  FULL_VERSION="$MAJOR_MINOR.$i"
+                  echo "Adding $FULL_VERSION to check list"
+                  echo "$FULL_VERSION" >> /tmp/expanded_versions/all_versions.txt
+                done
+              done
+              
+              # Remove duplicates and sort
+              if [ -f "/tmp/expanded_versions/all_versions.txt" ]; then
+                EXPANDED_VERSIONS=$(sort -V -u /tmp/expanded_versions/all_versions.txt)
+                echo "Expanded versions to check: $EXPANDED_VERSIONS"
+                
+                # Generate JSON matrix with expanded versions
+                MATRIX_JSON=$(echo "$EXPANDED_VERSIONS" | jq -Rs '
+                  split("\n") 
+                  | map(select(length > 0)) 
+                  | map({
+                      "zabbix_version": .,  
+                      "major_minor": (split(".") | .[0:2] | join(".") | tostring), 
+                      "is_latest": "false"
+                    }) 
+                  | {"include": .}
+                ' | tr -d '\n')
+                
+                echo "Generated expanded build matrix:"
+                echo "$MATRIX_JSON" | jq .
+                
+                echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
+              else
+                echo "No expanded versions generated"
+                echo 'matrix={"include":[]}' >> $GITHUB_OUTPUT
+              fi
             else
               echo "No versions to build"
               echo 'matrix={"include":[]}' >> $GITHUB_OUTPUT
@@ -236,10 +267,32 @@ jobs:
 
           MATRIX='${{ needs.collect-missing-versions.outputs.matrix }}'
           if [ "$(echo "$MATRIX" | jq '.include | length')" -gt 0 ]; then
-            echo "## Versions queued for building:" >> $GITHUB_STEP_SUMMARY
-            echo '```json' >> $GITHUB_STEP_SUMMARY
-            echo "$MATRIX" | jq . >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
+            VERSIONS_COUNT=$(echo "$MATRIX" | jq '.include | length')
+            
+            echo "## Versions Queued for Building" >> $GITHUB_STEP_SUMMARY
+            echo "Total versions to build: $VERSIONS_COUNT" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "This workflow expands each version to build all previous patch releases in the same major.minor series." >> $GITHUB_STEP_SUMMARY
+            echo "For example, if version 7.0.9 is selected for building, the workflow will also build versions 7.0.0 through 7.0.8." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Extract and display versions by major.minor groups
+            echo "### Versions by Release Series" >> $GITHUB_STEP_SUMMARY
+            
+            # Get all major.minor values and sort them
+            MAJOR_MINORS=$(echo "$MATRIX" | jq -r '.include[].major_minor' | sort -V -u)
+            
+            for MM in $MAJOR_MINORS; do
+              # Get all versions for this major.minor
+              MM_VERSIONS=$(echo "$MATRIX" | jq -r --arg mm "$MM" '.include[] | select(.major_minor == $mm) | .zabbix_version' | sort -V)
+              MM_COUNT=$(echo "$MM_VERSIONS" | wc -l)
+              
+              echo "#### $MM Series ($MM_COUNT versions)" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "$MM_VERSIONS" | tr '\n' ' ' >> $GITHUB_STEP_SUMMARY
+              echo '' >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            done
           else
             echo "## No versions needed to be built" >> $GITHUB_STEP_SUMMARY
             echo "All requested versions already exist or upstream images are not available." >> $GITHUB_STEP_SUMMARY
