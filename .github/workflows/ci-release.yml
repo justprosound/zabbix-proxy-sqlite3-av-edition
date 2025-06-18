@@ -1,0 +1,137 @@
+# Primary workflow for Zabbix Proxy SQLite3
+# This workflow handles version detection, container building, and GitHub releases
+# It automatically rebuilds containers when dependencies change
+
+name: CI & Release Chain
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight UTC
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild of all containers'
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches:
+      - main
+    paths:
+      - 'Dockerfile'
+      - 'scripts/**'
+      - 'mibs/**'
+      - '.github/workflows/**'
+
+# Security: Minimal required permissions
+permissions:
+  contents: write
+  packages: write
+  actions: read
+  id-token: write
+  security-events: write  # For security scanning
+
+env:
+  # Security: Define allowed registries
+  ALLOWED_REGISTRIES: "ghcr.io"
+
+jobs:
+  # First, detect Zabbix versions
+  detect-versions:
+    uses: ./.github/workflows/_version-detection.yml
+
+  # Check if we need to rebuild containers
+  check-changes:
+    uses: ./.github/workflows/_check-changes.yml
+
+  # Update documentation
+  update-docs:
+    needs: detect-versions
+    uses: ./.github/workflows/_update-docs.yml
+    with:
+      latest_version: ${{ needs.detect-versions.outputs.latest_version }}
+      lts_version: ${{ needs.detect-versions.outputs.lts_version }}
+      all_versions: ${{ needs.detect-versions.outputs.all_versions }}
+
+  # Build and push containers in matrix
+  matrix-setup:
+    needs: [detect-versions, check-changes]
+    if: needs.check-changes.outputs.should_rebuild == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Print diagnostic info
+        run: |
+          echo "## Diagnostic Info"
+          echo "Latest version: ${{ needs.detect-versions.outputs.latest_version }}"
+          echo "LTS version: ${{ needs.detect-versions.outputs.lts_version }}"
+          echo "All versions: ${{ needs.detect-versions.outputs.all_versions }}"
+      - id: set-matrix
+        run: |
+          # Get raw matrix from previous job
+          RAW_MATRIX='${{ needs.detect-versions.outputs.matrix }}'
+
+          # Debug output
+          echo "Received matrix from detect-versions job:"
+          echo "$RAW_MATRIX"
+
+          # Enhanced diagnostic info
+          echo "Matrix content type check:"
+          echo "$RAW_MATRIX" | file -
+
+          # Check if it's a valid JSON using jq
+          if ! echo "$RAW_MATRIX" | jq . >/dev/null 2>&1; then
+            # Detailed error report
+            ERROR_MSG=$(echo "$RAW_MATRIX" | jq . 2>&1)
+
+            echo "::error::Matrix from version detection is not valid JSON"
+            echo "::error::JQ error: $ERROR_MSG"
+            echo "::error::Raw matrix content: $RAW_MATRIX"
+
+            # Try a character-by-character hex dump to find invalid characters
+            echo "Matrix content hex dump (first 200 chars):"
+            echo "$RAW_MATRIX" | head -c 200 | hexdump -C
+
+            # Fail the job - no fallbacks, just error out as requested
+            exit 1
+          fi
+
+          # Validate that all version values are strings
+          VERSION_TYPE=$(echo "$RAW_MATRIX" | jq -r '.include[0].zabbix_version | type' 2>/dev/null || echo "unknown")
+          if [[ "$VERSION_TYPE" != "string" ]]; then
+            echo "::error::Version in matrix must be a string, got type: $VERSION_TYPE"
+            echo "::error::Matrix content: $(echo "$RAW_MATRIX" | jq .)"
+            exit 1
+          fi
+
+          # Matrix is valid
+          echo "Matrix JSON is valid"
+          MATRIX="$RAW_MATRIX"
+
+          # Store and output the valid JSON
+          echo "$MATRIX" > /tmp/matrix.json
+          echo "Matrix to be used:"
+          jq . /tmp/matrix.json
+
+          # Output final matrix for the next job
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
+          # Add to step summary for debugging
+          echo "## Matrix Configuration" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          jq . /tmp/matrix.json >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  # Run build for each matrix item
+  build-containers:
+    needs: [matrix-setup, detect-versions]
+    strategy:
+      matrix: ${{ fromJson(needs.matrix-setup.outputs.matrix) }}
+      fail-fast: false
+    uses: ./.github/workflows/_build-container.yml
+    with:
+      zabbix_version: ${{ matrix.zabbix_version }}
+      major_minor: ${{ matrix.major_minor }}
+      is_latest: ${{ matrix.is_latest }}
+      latest_version: ${{ needs.detect-versions.outputs.latest_version }}
