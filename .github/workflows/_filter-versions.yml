@@ -1,0 +1,153 @@
+name: -- reusable -- Filter Versions by Support Status
+
+on:
+  workflow_call:
+    inputs:
+      versions:
+        required: true
+        type: string
+        description: "Comma-separated list of versions to filter (e.g., '7.0.0,7.0.1,7.2.0')"
+      min_version:
+        required: false
+        type: string
+        default: '0.0.0'
+        description: "Minimum version to include (e.g., '7.0.0')"
+      supported_only:
+        required: false
+        type: boolean
+        default: true
+        description: "Only include versions from supported series (end_of_full_support == false)"
+    outputs:
+      filtered_versions:
+        description: "Filtered versions as comma-separated list"
+        value: ${{ jobs.filter-versions.outputs.filtered_versions }}
+      matrix:
+        description: "Build matrix in JSON format"
+        value: ${{ jobs.filter-versions.outputs.matrix }}
+
+jobs:
+  filter-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      filtered_versions: ${{ steps.filter.outputs.filtered_versions }}
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+    steps:
+      - name: Fetch Zabbix version data
+        run: |
+          echo "Fetching data from Zabbix API..."
+          curl -s -f -S "https://services.zabbix.com/updates/v1" > /tmp/zabbix-versions.json || {
+            echo "::error::Failed to fetch Zabbix version data from API"
+            exit 1
+          }
+
+          # Validate the JSON response
+          if ! jq . /tmp/zabbix-versions.json > /dev/null; then
+            echo "::error::Invalid JSON received from Zabbix API"
+            cat /tmp/zabbix-versions.json | head -n 50
+            exit 1
+          fi
+
+      - name: Filter versions by support status
+        id: filter
+        run: |
+          set -e
+          VERSIONS="${{ inputs.versions }}"
+          MIN_VERSION="${{ inputs.min_version }}"
+          SUPPORTED_ONLY="${{ inputs.supported_only }}"
+
+          echo "Input versions: $VERSIONS"
+          echo "Minimum version: $MIN_VERSION"
+          echo "Supported only: $SUPPORTED_ONLY"
+
+          # Convert comma-separated list to line-based list
+          VERSIONS_LIST=$(echo "$VERSIONS" | tr ',' '\n')
+
+          # Get supported major.minor series from Zabbix API if needed
+          if [ "$SUPPORTED_ONLY" == "true" ]; then
+            SUPPORTED_SERIES=$(jq -r '.versions[] | select(.end_of_full_support == false) | .latest_release.release | split(".") | .[0:2] | join(".")' /tmp/zabbix-versions.json | sort -u)
+            echo "Supported major.minor series: $(echo "$SUPPORTED_SERIES" | tr '\n' ', ')"
+          fi
+
+          # Filter versions by criteria
+          FILTERED_VERSIONS=$(echo "$VERSIONS_LIST" | while read V; do
+            # Skip empty lines
+            [ -z "$V" ] && continue
+
+            # Check minimum version
+            if [ "$MIN_VERSION" != "0.0.0" ]; then
+              # Compare versions
+              if ! awk -v v1="$V" -v v2="$MIN_VERSION" 'BEGIN {
+                split(v1, a, ".");
+                split(v2, b, ".");
+                for (i = 1; i <= 3; i++) {
+                  if (a[i]+0 < b[i]+0) exit 1;
+                  if (a[i]+0 > b[i]+0) exit 0;
+                }
+                exit 0;
+              }'; then
+                # Skip if version is less than minimum
+                continue
+              fi
+            fi
+
+            # Check supported status if required
+            if [ "$SUPPORTED_ONLY" == "true" ]; then
+              MM=$(echo "$V" | cut -d. -f1,2)
+              if ! echo "$SUPPORTED_SERIES" | grep -qx "$MM"; then
+                # Skip if major.minor is not in supported series
+                continue
+              fi
+            fi
+
+            # If we get here, the version passes all filters
+            echo "$V"
+          done)
+
+          # Convert to comma-separated list
+          FILTERED_CSV=$(echo "$FILTERED_VERSIONS" | tr '\n' ',' | sed 's/,$//')
+
+          echo "Filtered versions: $FILTERED_CSV"
+          echo "filtered_versions=$FILTERED_CSV" >> $GITHUB_OUTPUT
+
+          # Add to step summary
+          echo "## Version Filtering" >> $GITHUB_STEP_SUMMARY
+          echo "| Description | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| ----------- | ----- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Input Version Count | $(echo "$VERSIONS_LIST" | grep -v '^$' | wc -l) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Minimum Version | $MIN_VERSION |" >> $GITHUB_STEP_SUMMARY
+          echo "| Supported Series Only | $SUPPORTED_ONLY |" >> $GITHUB_STEP_SUMMARY
+          echo "| Filtered Version Count | $(echo "$FILTERED_VERSIONS" | grep -v '^$' | wc -l) |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Generate matrix from filtered versions
+        id: generate-matrix
+        run: |
+          FILTERED_VERSIONS=$(echo "${{ steps.filter.outputs.filtered_versions }}" | tr ',' '\n')
+
+          # Get latest version (highest version number)
+          LATEST_VERSION=$(echo "$FILTERED_VERSIONS" | sort -V | tail -n1)
+          echo "Latest version: $LATEST_VERSION"
+
+          # Create matrix JSON
+          MATRIX_JSON=$(echo "$FILTERED_VERSIONS" | grep -v '^$' | jq --arg latest "$LATEST_VERSION" -Rs '
+            split("\n")
+            | map(select(length > 0))
+            | map({
+                "zabbix_version": .,
+                "major_minor": (split(".") | .[0:2] | join(".") | tostring),
+                "is_latest": (if . == $latest then "true" else "false" end)
+              })
+            | {"include": .}
+          ' | tr -d '\n')
+
+          echo "Generated matrix:"
+          echo "$MATRIX_JSON" | jq .
+
+          # Validate matrix
+          INCLUDE_COUNT=$(echo "$MATRIX_JSON" | jq '.include | length')
+          if [[ "$INCLUDE_COUNT" -lt 1 ]]; then
+            # If no versions match, create an empty matrix
+            echo "No versions matched the criteria. Creating an empty matrix."
+            MATRIX_JSON='{"include":[]}'
+          fi
+
+          echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
