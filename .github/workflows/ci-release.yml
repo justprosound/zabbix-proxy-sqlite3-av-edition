@@ -34,6 +34,11 @@ permissions:
 env:
   # Security: Define allowed registries
   ALLOWED_REGISTRIES: "ghcr.io"
+  REGISTRY: "ghcr.io"
+  # Default repo name, can be customized in repository settings or overrides
+  REPO_NAME: "zabbix-proxy-sqlite3"
+  # Default base name for documentation and references
+  BASE_NAME: "Zabbix Proxy SQLite3 AV Edition"
 
 jobs:
   # First, detect Zabbix versions
