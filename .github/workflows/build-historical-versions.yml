@@ -244,21 +244,23 @@ jobs:
               # Process each version to expand its major.minor series
               EXPANDED_VERSIONS=""
 
-              # Process each version
-              echo "$VERSIONS" | sort -V | while read -r VERSION; do
-                # Extract major.minor from version
-                MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
-                PATCH=$(echo "$VERSION" | cut -d. -f3)
+              # Process each version - fix subshell issue by using different approach
+              while IFS= read -r VERSION; do
+                if [ -n "$VERSION" ]; then
+                  # Extract major.minor from version
+                  MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
+                  PATCH=$(echo "$VERSION" | cut -d. -f3)
 
-                echo "Processing version $VERSION (Major.Minor: $MAJOR_MINOR, Patch: $PATCH)"
+                  echo "Processing version $VERSION (Major.Minor: $MAJOR_MINOR, Patch: $PATCH)"
 
-                # Generate sequence from 0 to patch for this major.minor
-                for ((i=0; i<=$PATCH; i++)); do
-                  FULL_VERSION="$MAJOR_MINOR.$i"
-                  echo "Adding $FULL_VERSION to check list"
-                  echo "$FULL_VERSION" >> /tmp/expanded_versions/all_versions.txt
-                done
-              done
+                  # Generate sequence from 0 to patch for this major.minor
+                  for ((i=0; i<=$PATCH; i++)); do
+                    FULL_VERSION="$MAJOR_MINOR.$i"
+                    echo "Adding $FULL_VERSION to check list"
+                    echo "$FULL_VERSION" >> /tmp/expanded_versions/all_versions.txt
+                  done
+                fi
+              done <<< "$(echo "$VERSIONS" | sort -V)"
 
               # Remove duplicates and sort
               if [ -f "/tmp/expanded_versions/all_versions.txt" ]; then
@@ -296,6 +298,8 @@ jobs:
 
   build-missing-versions:
     needs: collect-missing-versions
+    # Only run if there are versions to build (matrix is not empty)
+    if: ${{ fromJson(needs.collect-missing-versions.outputs.matrix).include[0] != null }}
     strategy:
       matrix: ${{ fromJson(needs.collect-missing-versions.outputs.matrix) }}
       fail-fast: false
@@ -306,7 +310,7 @@ jobs:
       latest_version: ${{ matrix.zabbix_version }}  # Set to current version
 
   summary:
-    needs: collect-missing-versions
+    needs: [collect-missing-versions, build-missing-versions]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -367,11 +371,33 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           MATRIX='${{ needs.collect-missing-versions.outputs.matrix }}'
+          BUILD_JOB_STATUS='${{ needs.build-missing-versions.result }}'
+
           if [ "$(echo "$MATRIX" | jq '.include | length')" -gt 0 ]; then
             VERSIONS_COUNT=$(echo "$MATRIX" | jq '.include | length')
 
             echo "## Versions Queued for Building" >> $GITHUB_STEP_SUMMARY
             echo "Total versions to build: $VERSIONS_COUNT" >> $GITHUB_STEP_SUMMARY
+
+            # Show build job status
+            case "$BUILD_JOB_STATUS" in
+              "success")
+                echo "**Build Status**: ✅ All builds completed successfully" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "failure")
+                echo "**Build Status**: ❌ Some builds failed" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "cancelled")
+                echo "**Build Status**: 🚫 Builds were cancelled" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "skipped")
+                echo "**Build Status**: ⏭️ Builds were skipped" >> $GITHUB_STEP_SUMMARY
+                ;;
+              *)
+                echo "**Build Status**: ⏳ Builds are in progress or status unknown" >> $GITHUB_STEP_SUMMARY
+                ;;
+            esac
+
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "This workflow expands each version to build all previous patch releases in the same major.minor series." >> $GITHUB_STEP_SUMMARY
             echo "For example, if version 7.0.9 is selected for building, the workflow will also build versions 7.0.0 through 7.0.8." >> $GITHUB_STEP_SUMMARY
