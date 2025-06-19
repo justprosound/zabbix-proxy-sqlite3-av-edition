@@ -1,4 +1,4 @@
-name: -- reusable -- Update Documentation
+name: ◆ reusable | Update Documentation
 
 on:
   workflow_call:
@@ -91,14 +91,53 @@ jobs:
           REPO_NAME="${REPO_NAME#*/}"
           echo "Repository owner: $REPO_OWNER"
           echo "Repository name: $REPO_NAME"
-          if [[ -f "README.md" ]]; then
-            echo "Updating GitHub organization references in README.md..."
-            # Single sed command with multi-pattern search - handles all domain types at once
-            sed -i -E 's@(github\.com|ghcr\.io|img\.shields\.io/github[^/]*/)[^/]+/('$REPO_NAME')@\1'$REPO_OWNER'/\2@g' README.md
-            echo "Updated all GitHub organization references"
-          else
-            echo "Warning: README.md not found"
-          fi
+
+          # Find all markdown files in the repository (excluding specific paths)
+          echo "Finding all markdown files in the repository..."
+          MARKDOWN_FILES=$(find . -type f -name "*.md" | grep -v "node_modules\|vendor\|\.git")
+
+          # Counter for modified files
+          MODIFIED_COUNT=0
+
+          for file in $MARKDOWN_FILES; do
+            echo "Processing $file..."
+            # Create a backup of the original file for comparison
+            cp "$file" "${file}.bak"
+
+            # Replace explicit GITHUB_USERNAME placeholders
+            sed -i -E 's@ghcr\.io/GITHUB_USERNAME/@ghcr\.io/'$REPO_OWNER'/@g' "$file"
+            sed -i -E 's@ghcr\.io/GITHUB_USERNAME@ghcr\.io/'$REPO_OWNER'@g' "$file"
+
+            # Handle specific Docker image repository references
+            sed -i -E 's@ghcr\.io/[^/]+/'$REPO_NAME'@ghcr\.io/'$REPO_OWNER'/'$REPO_NAME'@g' "$file"
+
+            # Handle repository-owner placeholders with angle brackets
+            sed -i -E 's@ghcr\.io/<repository-owner>/@ghcr\.io/'$REPO_OWNER'/@g' "$file"
+            sed -i -E 's@github\.com/<repository-owner>/@github\.com/'$REPO_OWNER'/@g' "$file"
+
+            # Handle image name placeholders - using the full repository name for consistency
+            if [[ -n "$REPO_NAME" ]]; then
+              sed -i -E 's@<derived-image-name>@'$REPO_NAME'@g' "$file"
+              sed -i -E 's@zabbix-proxy-sqlite3@'$REPO_NAME'@g' "$file"
+            fi
+
+            # Check if the file was modified
+            if ! cmp -s "$file" "${file}.bak"; then
+              echo "✓ Updated organization references in $file"
+              # Show what changed (sample)
+              echo "   Changes made (sample):"
+              diff -U0 "${file}.bak" "$file" | grep '^[+-][^+-]' | head -10
+              MODIFIED_COUNT=$((MODIFIED_COUNT + 1))
+            else
+              echo "✓ No changes needed in $file"
+            fi
+
+            # Remove the backup file
+            rm "${file}.bak"
+          done
+
+          echo "=== Summary ==="
+          echo "Modified $MODIFIED_COUNT markdown files with repository references"
 
       - name: Commit changes back to repository
         id: commit_changes
@@ -106,13 +145,27 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          # Check if there are changes to commit
-          if git diff --exit-code README.md; then
-            echo "No changes to commit."
-          else
-            echo "Changes detected in README.md, committing..."
-            git add README.md
-            git commit -m "Update README.md with latest version information"
+          # Find all markdown files that might have changed
+          MARKDOWN_FILES=$(find . -type f -name "*.md" | grep -v "node_modules\|vendor\|\.git")
+
+          # Track if we need to commit any changes
+          CHANGES_DETECTED=false
+
+          # Check each file for changes
+          for file in $MARKDOWN_FILES; do
+            if ! git diff --exit-code "$file" > /dev/null 2>&1; then
+              echo "Changes detected in $file"
+              git add "$file"
+              CHANGES_DETECTED=true
+            fi
+          done
+
+          # Commit if any files changed
+          if [ "$CHANGES_DETECTED" = true ]; then
+            echo "Committing changes to documentation files..."
+            git commit -m "Update documentation with latest version information and repository references"
             git push
             echo "Changes committed and pushed."
+          else
+            echo "No changes to commit."
           fi
