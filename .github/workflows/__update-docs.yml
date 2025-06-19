@@ -69,7 +69,8 @@ jobs:
             TABLE+="\n| Version | Tags | Description |"
             TABLE+="\n|---------|------|-------------|"
 
-            for VERSION in $(echo "${ALL_VERSIONS%,}" | tr ',' ' ' | sort -Vr); do
+            for VERSION in $(echo "${ALL_VERSIONS%,}" | tr ',' ' ' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr); do
+              # Skip empty versions (should be filtered already, but adding an extra check)
               [[ -z "$VERSION" ]] && continue
               MAJOR=$(echo "$VERSION" | cut -d. -f1)
               MINOR=$(echo "$VERSION" | cut -d. -f2)
@@ -116,7 +117,9 @@ jobs:
             echo "| ---- | ------- |" >> $GITHUB_STEP_SUMMARY
             echo "| Latest | $LATEST_VERSION |" >> $GITHUB_STEP_SUMMARY
             echo "| LTS | $LTS_VERSION |" >> $GITHUB_STEP_SUMMARY
-            echo "| All Supported Versions | $(echo "$ALL_VERSIONS" | tr ',' ', ') |" >> $GITHUB_STEP_SUMMARY
+            # Get clean, comma-separated version list with version validation
+            CLEAN_VERSIONS=$(echo "$ALL_VERSIONS" | tr ',' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | tr '\n' ',' | sed 's/,/, /g' | sed 's/, $//')
+            echo "| All Supported Versions | $CLEAN_VERSIONS |" >> $GITHUB_STEP_SUMMARY
           else
             echo "Warning: No version data or README.md not found"
             echo "⚠️ **Warning:** Could not update README - either no version data provided or README.md not found" >> $GITHUB_STEP_SUMMARY

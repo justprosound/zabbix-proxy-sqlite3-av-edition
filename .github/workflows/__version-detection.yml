@@ -46,10 +46,16 @@ jobs:
             echo "::error::Invalid JSON received from Zabbix API"
             cat .github/zabbix-versions.json | head -n 50
             exit 1
-          fi
+          }
 
-          # Extract supported versions
-          SUPPORTED_VERSIONS=$(jq -r '.versions[] | select(.end_of_full_support == false) | .latest_release.release' .github/zabbix-versions.json | sort -V)
+          # Extract supported versions with proper validation
+          SUPPORTED_VERSIONS=$(jq -r '.versions[] | select(.end_of_full_support == false) |
+            if has("latest_release") and .latest_release != null and .latest_release | has("release") and .latest_release.release != null then
+              .latest_release.release
+            else
+              empty
+            end' .github/zabbix-versions.json | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+
           if [ -z "$SUPPORTED_VERSIONS" ]; then
             echo "::error::No supported versions found in Zabbix API response"
             cat .github/zabbix-versions.json | jq .
@@ -59,32 +65,57 @@ jobs:
           # Identify LTS version (x.0.x format)
           # LTS = current LTS release (usually x.0.x format from upstream Zabbix)
           LTS_VERSION=""
-          for VERSION in $SUPPORTED_VERSIONS; do
-            [[ -z "$VERSION" ]] && continue
-            MINOR=$(echo "$VERSION" | cut -d. -f2)
-            if [[ "$MINOR" == "0" ]]; then
-              LTS_VERSION="$VERSION"
-              echo "Found LTS version: $LTS_VERSION (x.0.x pattern - current LTS release)"
-            fi
-          done
 
-          # Fallback if no LTS found - still need to define a current LTS release
-          if [[ -z "$LTS_VERSION" ]]; then
-            LTS_VERSION=$(echo "$SUPPORTED_VERSIONS" | head -n1)
-            echo "No LTS version with x.0.x pattern found, using oldest version as current LTS release: $LTS_VERSION"
+          # First, verify we have valid versions to work with
+          if [ -n "$SUPPORTED_VERSIONS" ]; then
+            # Sort versions to find highest x.0.x version
+            for VERSION in $(echo "$SUPPORTED_VERSIONS" | sort -Vr); do
+              # Skip empty or invalid versions
+              [[ -z "$VERSION" ]] || ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && continue
+
+              MINOR=$(echo "$VERSION" | cut -d. -f2)
+              if [[ "$MINOR" == "0" ]]; then
+                # Found an LTS version, use the highest one (sorted in reverse)
+                LTS_VERSION="$VERSION"
+                echo "Found LTS version: $LTS_VERSION (x.0.x pattern - current LTS release)"
+                break
+              fi
+            done
+
+            # Fallback if no LTS found - still need to define a current LTS release
+            if [[ -z "$LTS_VERSION" ]]; then
+              # Use oldest supported version as LTS when no x.0.x pattern exists
+              LTS_VERSION=$(echo "$SUPPORTED_VERSIONS" | sort -V | head -n1)
+              echo "No LTS version with x.0.x pattern found, using oldest version as current LTS release: $LTS_VERSION"
+            fi
+          else
+            echo "::error::No valid versions found to determine LTS version"
+            exit 1
           fi
 
           # Get latest version (highest version number)
           # Latest = highest version number regardless of release date
-          LATEST_VERSION=$(echo "$SUPPORTED_VERSIONS" | sort -V | tail -n1)
+          # But ensure it's actually a valid version
+          LATEST_VERSION=$(echo "$SUPPORTED_VERSIONS" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+
+          # Verify we found a valid latest version
+          if [[ -z "$LATEST_VERSION" ]]; then
+            echo "::error::Failed to determine latest version from supported versions list"
+            exit 1
+          fi
+
           echo "Latest version: $LATEST_VERSION (highest version number)"
           echo "LTS version: $LTS_VERSION (current LTS release from upstream Zabbix)"
           echo "All supported versions: $SUPPORTED_VERSIONS"
 
-          # Set outputs for next steps
+          # Set outputs for next steps - filter out any empty or invalid entries
+          # Filter out empty values and ensure each version has a valid format (x.y.z)
+          CLEAN_VERSIONS=$(echo "$SUPPORTED_VERSIONS" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+          echo "Filtered versions (removing empty or invalid entries): $CLEAN_VERSIONS"
+
           echo "latest_version=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
           echo "lts_version=$LTS_VERSION" >> "$GITHUB_OUTPUT"
-          echo "all_versions=$(echo "$SUPPORTED_VERSIONS" | tr '\n' ',')" >> "$GITHUB_OUTPUT"
+          echo "all_versions=$(echo "$CLEAN_VERSIONS" | tr '\n' ',')" >> "$GITHUB_OUTPUT"
 
           # Add to step summary
           echo "## Zabbix Version Detection" >> $GITHUB_STEP_SUMMARY
@@ -97,7 +128,10 @@ jobs:
       - name: Generate build matrix for Zabbix versions
         id: generate_build_matrix
         run: |
-          SUPPORTED_VERSIONS=$(jq -r '.versions[] | select(.end_of_full_support == false) | .latest_release.release' .github/zabbix-versions.json | sort -V)
+          # Reuse the clean, validated versions from the previous step
+          SUPPORTED_VERSIONS="${{ steps.fetch_zabbix_versions.outputs.all_versions }}"
+          # Convert from comma-separated back to newline-separated
+          SUPPORTED_VERSIONS=$(echo "$SUPPORTED_VERSIONS" | tr ',' '\n')
           LTS_VERSION="${{ steps.fetch_zabbix_versions.outputs.lts_version }}"
 
           # Create the matrix JSON with proper string escaping
@@ -113,8 +147,14 @@ jobs:
           echo "Finding highest patch version for each major.minor series..."
           declare -A HIGHEST_PATCH
           for VERSION in $SUPPORTED_VERSIONS; do
+            # Skip empty or invalid versions
             [[ -z "$VERSION" ]] && continue
+            [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && continue
+
             MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
+            # Skip invalid major.minor values
+            [[ ! "$MAJOR_MINOR" =~ ^[0-9]+\.[0-9]+$ ]] && continue
+
             CURRENT_HIGHEST="${HIGHEST_PATCH[$MAJOR_MINOR]}"
 
             # If no version is set for this major.minor or the current version is higher
@@ -142,6 +182,8 @@ jobs:
           for VERSION in $SUPPORTED_VERSIONS; do
             # Skip empty lines
             [[ -z "$VERSION" ]] && continue
+            # Skip invalid versions
+            [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && continue
 
             # Extract major.minor
             MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
@@ -201,6 +243,7 @@ jobs:
           echo "| ------- | ----------- | -------------------- | -------------------------- |" >> $GITHUB_STEP_SUMMARY
           for VERSION in $SUPPORTED_VERSIONS; do
             [[ -z "$VERSION" ]] && continue
+            [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && continue
             MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
             IS_LTS="No"
             IS_LATEST="No"
