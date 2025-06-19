@@ -12,6 +12,11 @@ on:
       all_versions:
         required: true
         type: string
+      build_success:
+        required: false
+        type: boolean
+        default: false
+        description: "Whether the build was successful"
 
 jobs:
   update-docs:
@@ -24,13 +29,37 @@ jobs:
       - name: Update README with version table
         id: update_readme
         run: |
+          # Check if this is a build from a successful workflow
+          # If BUILD_SUCCESS is not set to 'true', don't update version information
+          BUILD_SUCCESS='${{ inputs.build_success }}'
+
           LATEST_VERSION='${{ inputs.latest_version }}'
           LTS_VERSION='${{ inputs.lts_version }}'
           ALL_VERSIONS='${{ inputs.all_versions }}'
 
+          echo "Build success status: $BUILD_SUCCESS"
           echo "Latest version: $LATEST_VERSION"
           echo "LTS version: $LTS_VERSION"
           echo "All versions: $ALL_VERSIONS"
+
+          if [[ "$BUILD_SUCCESS" != "true" ]]; then
+            echo "Build was not successful or status not provided. Skipping version update in README."
+            echo "::warning::README version table not updated because build was not successful."
+
+            # Add more detailed info to step summary
+            echo "## README Version Update Status" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Version update skipped:** Build was not successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The README version table is only updated after successful builds to ensure accurate version information." >> $GITHUB_STEP_SUMMARY
+            echo "- Latest detected version: $LATEST_VERSION (not updated in README)" >> $GITHUB_STEP_SUMMARY
+            echo "- LTS detected version: $LTS_VERSION (not updated in README)" >> $GITHUB_STEP_SUMMARY
+
+            exit 0
+          fi
+
+          # Add success notice to summary before proceeding
+          echo "## README Version Update Status" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Version update in progress:** Build was successful" >> $GITHUB_STEP_SUMMARY
 
           if [[ -n "$LATEST_VERSION" && -f "README.md" ]]; then
             echo "Updating README.md with version information..."
@@ -79,8 +108,18 @@ jobs:
               fi
             fi
             echo "Updated README.md with version information"
+
+            # Add detailed version info to step summary
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Version Information Updated in README" >> $GITHUB_STEP_SUMMARY
+            echo "| Type | Version |" >> $GITHUB_STEP_SUMMARY
+            echo "| ---- | ------- |" >> $GITHUB_STEP_SUMMARY
+            echo "| Latest | $LATEST_VERSION |" >> $GITHUB_STEP_SUMMARY
+            echo "| LTS | $LTS_VERSION |" >> $GITHUB_STEP_SUMMARY
+            echo "| All Supported Versions | $(echo "$ALL_VERSIONS" | tr ',' ', ') |" >> $GITHUB_STEP_SUMMARY
           else
             echo "Warning: No version data or README.md not found"
+            echo "⚠️ **Warning:** Could not update README - either no version data provided or README.md not found" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Update GitHub organization references
