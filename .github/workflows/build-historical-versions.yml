@@ -141,12 +141,18 @@ jobs:
           # Get supported series (major.minor) from Zabbix API
           SUPPORTED_VERSIONS="${{ needs.get-supported-versions.outputs.all_versions }}"
 
-          # Convert comma-separated values to JSON arrays for easier processing
-          ALL_VERSIONS_JSON=$(echo "$ALL_VERSIONS" | tr ',' '\n' | jq -R . | jq -s .)
-          SUPPORTED_VERSIONS_JSON=$(echo "$SUPPORTED_VERSIONS" | tr ',' '\n' | jq -R . | jq -s .)
+          # Convert comma-separated values to JSON arrays, filtering out empty entries
+          ALL_VERSIONS_JSON=$(echo "$ALL_VERSIONS" | tr ',' '\n' | grep -v '^$' | jq -R . | jq -s '.')
+          SUPPORTED_VERSIONS_JSON=$(echo "$SUPPORTED_VERSIONS" | tr ',' '\n' | grep -v '^$' | jq -R . | jq -s '.')
 
           # Extract major.minor from supported versions to create a filter
-          SUPPORTED_SERIES_JSON=$(echo "$SUPPORTED_VERSIONS_JSON" | jq '[.[] | split(".")[0:2] | join(".")]' | jq 'unique')
+          # Make sure we have proper version format and extract only valid series
+          SUPPORTED_SERIES_JSON=$(echo "$SUPPORTED_VERSIONS_JSON" | jq '[.[] |
+            select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) |
+            split(".")[0:2] |
+            join(".") |
+            select(length > 0 and test("^[0-9]+\\.[0-9]+$"))]' |
+            jq 'unique')
           echo "Supported series: $(echo "$SUPPORTED_SERIES_JSON" | jq -c .)"
 
           # Count original versions before filtering
@@ -167,8 +173,9 @@ jobs:
               # Filter to only supported series
               map(select(
                 . as $version |
+                ($version | split(".")[0:2] | join(".")) as $version_major_minor |
                 $supported_series |
-                map($version | startswith(.)) |
+                map(. == $version_major_minor) |
                 any
               )) |
               # Sort versions numerically
@@ -434,8 +441,8 @@ jobs:
           DOCKERHUB_TAG_COUNT=$(echo "${{ needs.get-dockerhub-tags.outputs.all_versions }}" | tr ',' '\n' | grep -v '^$' | wc -l)
           echo "| Docker Hub Tags | $DOCKERHUB_TAG_COUNT |" >> $GITHUB_STEP_SUMMARY
 
-          # Supported versions count
-          SUPPORTED_COUNT=$(echo "${{ needs.get-supported-versions.outputs.all_versions }}" | tr ',' '\n' | grep -v '^$' | wc -l)
+          # Supported versions count (already filtered in __version-detection.yml)
+          SUPPORTED_COUNT=$(echo "${{ needs.get-supported-versions.outputs.all_versions }}" | tr ',' '\n' | wc -l)
           echo "| Supported Zabbix Versions | $SUPPORTED_COUNT |" >> $GITHUB_STEP_SUMMARY
 
           # Versions to build count
