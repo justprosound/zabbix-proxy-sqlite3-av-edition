@@ -71,6 +71,7 @@ jobs:
     steps:
       - name: Set image name
         id: set-image-name
+        shell: bash
         run: |
           # Check if a custom image name was provided
           CUSTOM_IMAGE_NAME="${{ inputs.custom_image_name }}"
@@ -106,10 +107,10 @@ jobs:
 
           echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
 
-      - name: Install parallel and jq
+      - name: Install jq
         run: |
           sudo apt-get update
-          sudo apt-get install -y parallel jq
+          sudo apt-get install -y jq
 
       - name: Filter and process versions
         id: generate-matrix
@@ -161,64 +162,62 @@ jobs:
           FORCE_REBUILD="${{ inputs.force_rebuild }}"
           BUILD_ALL_PATCHES="${{ inputs.build_all_patches }}"
 
-          # Create temp files for parallel processing
-          TEMP_DIR=$(mktemp -d)
-          VERSIONS_FILE="$TEMP_DIR/versions.json"
-          RESULTS_FILE="$TEMP_DIR/results.json"
+          echo "Checking image existence..."
 
-          # Write filtered versions to file for parallel processing
-          echo "$FILTERED_VERSIONS_JSON" > "$VERSIONS_FILE"
+          # Initialize an empty array for results
+          FILTERED_RESULTS="[]"
 
-          # Create empty results file
-          echo "[]" > "$RESULTS_FILE"
+          # Process versions directly from the filtered JSON array
+          echo "$FILTERED_VERSIONS_JSON" | jq -c '.[]' | while read -r VERSION; do
+            # Remove quotes from version string
+            VERSION=$(echo $VERSION | tr -d '"')
+            MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
+            IMAGE_TAG="ubuntu-$VERSION"
 
-          echo "Checking image existence in parallel batches..."
+            # Check if upstream image exists
+            UPSTREAM_EXISTS=false
+            if docker manifest inspect "$UPSTREAM_REPO:$IMAGE_TAG" &>/dev/null; then
+              UPSTREAM_EXISTS=true
+            fi
 
-          # Process in parallel with GNU parallel
-          # This will check each version and output JSON results directly
-          cat "$VERSIONS_FILE" | jq -c '.[]' | \
-            parallel --jobs 20 --will-cite bash -c '
-              VERSION="{}"
-              MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
-              IMAGE_TAG="ubuntu-$VERSION"
-
-              # Check if upstream image exists (only make the API call when needed)
-              UPSTREAM_EXISTS=false
-              if docker manifest inspect "$UPSTREAM_REPO:$IMAGE_TAG" &>/dev/null; then
-                UPSTREAM_EXISTS=true
+            # Only check our image if upstream exists and not forcing rebuild
+            IMAGE_EXISTS=false
+            if [[ "$UPSTREAM_EXISTS" == true && "$FORCE_REBUILD" != "true" ]]; then
+              if docker manifest inspect "$IMAGE_NAME:$IMAGE_TAG" &>/dev/null; then
+                IMAGE_EXISTS=true
               fi
+            fi
 
-              # Only check our image if upstream exists and not forcing rebuild
-              IMAGE_EXISTS=false
-              if [[ "$UPSTREAM_EXISTS" == true && "$FORCE_REBUILD" != "true" ]]; then
-                if docker manifest inspect "$IMAGE_NAME:$IMAGE_TAG" &>/dev/null; then
-                  IMAGE_EXISTS=true
-                fi
-              fi
+            # Determine if we should build
+            SHOULD_BUILD=false
+            if [[ "$FORCE_REBUILD" == "true" || ( "$UPSTREAM_EXISTS" == true && "$IMAGE_EXISTS" == false ) ]]; then
+              SHOULD_BUILD=true
+            fi
 
-              # Determine if we should build
-              SHOULD_BUILD=false
-              if [[ "$FORCE_REBUILD" == "true" || ( "$UPSTREAM_EXISTS" == true && "$IMAGE_EXISTS" == false ) ]]; then
-                SHOULD_BUILD=true
-              fi
+            # If we should build, add to the filtered results
+            if [ "$SHOULD_BUILD" = true ]; then
+              # Create a JSON object for this version
+              VERSION_JSON=$(jq -n \
+                --arg version "$VERSION" \
+                --arg major_minor "$MAJOR_MINOR" \
+                --argjson upstream_exists "$UPSTREAM_EXISTS" \
+                --argjson image_exists "$IMAGE_EXISTS" \
+                --argjson should_build "$SHOULD_BUILD" \
+                '{
+                  "zabbix_version": $version,
+                  "major_minor": $major_minor,
+                  "upstream_exists": $upstream_exists,
+                  "image_exists": $image_exists,
+                  "should_build": $should_build
+                }')
 
-              # Output result as JSON
-              jq -n --arg version "$VERSION" \
-                  --arg major_minor "$MAJOR_MINOR" \
-                  --argjson upstream_exists "$UPSTREAM_EXISTS" \
-                  --argjson image_exists "$IMAGE_EXISTS" \
-                  --argjson should_build "$SHOULD_BUILD" \
-                  "{
-                    \"zabbix_version\": \$version,
-                    \"major_minor\": \$major_minor,
-                    \"upstream_exists\": \$upstream_exists,
-                    \"image_exists\": \$image_exists,
-                    \"should_build\": \$should_build
-                  }"
-            ' > "$TEMP_DIR/all_results.json"
+              # Append to our filtered results
+              FILTERED_RESULTS=$(echo "$FILTERED_RESULTS" | jq ". + [$VERSION_JSON]")
+            fi
 
-          # Combine and filter results
-          FILTERED_RESULTS=$(cat "$TEMP_DIR/all_results.json" | jq -s '[.[] | select(.should_build == true)]')
+            # Progress indicator
+            echo "Checked version: $VERSION (upstream: $UPSTREAM_EXISTS, exists: $IMAGE_EXISTS, build: $SHOULD_BUILD)"
+          done
 
           # Handle build_all_patches mode
           if [[ "$BUILD_ALL_PATCHES" == "true" ]]; then
@@ -254,24 +253,27 @@ jobs:
 
                 # Check if upstream image exists
                 if docker manifest inspect "$UPSTREAM_REPO:$UPSTREAM_TAG" &>/dev/null; then
-                  # Add to results
-                  echo "{
-                    \"zabbix_version\": \"$FULL_VERSION\",
-                    \"major_minor\": \"$MAJOR_MINOR\",
-                    \"upstream_exists\": true,
-                    \"should_build\": true
-                  }" >> "$TEMP_DIR/patch_results.json"
+                  # Create a JSON object for this patch version
+                  PATCH_JSON=$(jq -n \
+                    --arg version "$FULL_VERSION" \
+                    --arg major_minor "$MAJOR_MINOR" \
+                    '{
+                      "zabbix_version": $version,
+                      "major_minor": $major_minor,
+                      "upstream_exists": true,
+                      "should_build": true
+                    }')
+
+                  # Add directly to the filtered results
+                  FILTERED_RESULTS=$(echo "$FILTERED_RESULTS" | jq ". + [$PATCH_JSON]")
+
+                  echo "Added patch version: $FULL_VERSION"
                 fi
               done
             done
 
-            # Combine normal results with patch results if any
-            if [ -f "$TEMP_DIR/patch_results.json" ]; then
-              COMBINED_RESULTS=$(cat "$TEMP_DIR/patch_results.json" | jq -s . | jq --argjson base "$FILTERED_RESULTS" '
-                $base + . | unique_by(.zabbix_version)
-              ')
-              FILTERED_RESULTS="$COMBINED_RESULTS"
-            fi
+            # Deduplicate results
+            FILTERED_RESULTS=$(echo "$FILTERED_RESULTS" | jq 'unique_by(.zabbix_version)')
           fi
 
           # Extract the matrix-compatible format and versions CSV
@@ -296,9 +298,6 @@ jobs:
             echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
             echo "versions_to_build=" >> $GITHUB_OUTPUT
           fi
-
-          # Clean up
-          rm -rf "$TEMP_DIR"
 
           # Add to step summary
           echo "## Build Matrix Generation" >> $GITHUB_STEP_SUMMARY
