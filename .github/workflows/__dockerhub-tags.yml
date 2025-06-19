@@ -38,6 +38,25 @@ jobs:
           set -e
           echo "Fetching all tags from Docker Hub for ${{ inputs.repo }}..."
 
+          # Try to authenticate if credentials are provided
+          AUTH_TOKEN=""
+          if [[ -n "${{ secrets.DOCKERHUB_USERNAME }}" && -n "${{ secrets.DOCKERHUB_TOKEN }}" ]]; then
+            echo "Using authenticated Docker Hub API access"
+            AUTH_RESPONSE=$(curl -s -H "Content-Type: application/json" \
+              -X POST -d '{"username": "${{ secrets.DOCKERHUB_USERNAME }}", "password": "${{ secrets.DOCKERHUB_TOKEN }}"}' \
+              https://hub.docker.com/v2/users/login/)
+
+            # Check if authentication was successful
+            if [[ $(echo "$AUTH_RESPONSE" | jq -r '.token // empty') != "" ]]; then
+              AUTH_TOKEN=$(echo "$AUTH_RESPONSE" | jq -r '.token')
+              echo "Successfully authenticated with Docker Hub"
+            else
+              echo "Authentication failed, will proceed with anonymous access"
+            fi
+          else
+            echo "No Docker Hub credentials provided, using anonymous access"
+          fi
+
           # Paginate through Docker Hub API to get all tags
           REPO="${{ inputs.repo }}"
           PAGE_SIZE=100
@@ -45,16 +64,82 @@ jobs:
           TAGS_FILE="/tmp/dockerhub-tags.json"
           > "$TAGS_FILE"
 
+          # Retry settings
+          MAX_RETRIES=5
+          RETRY_WAIT=10
+
+          # Fetch tags with retry logic
+          function fetch_page() {
+            local url=$1
+            local retry=0
+            local wait_time=$RETRY_WAIT
+            local http_code
+            local response_body
+
+            while [[ $retry -lt $MAX_RETRIES ]]; do
+              if [[ -n "$AUTH_TOKEN" ]]; then
+                # Use authenticated request
+                response=$(curl -s -w "%{http_code}" \
+                  -H "Authorization: JWT $AUTH_TOKEN" \
+                  -H "User-Agent: GitHub-Actions-DockerHub-Tag-Discovery" \
+                  -o "/tmp/response_body.json" "$url")
+              else
+                # Use anonymous request
+                response=$(curl -s -w "%{http_code}" \
+                  -H "User-Agent: GitHub-Actions-DockerHub-Tag-Discovery" \
+                  -o "/tmp/response_body.json" "$url")
+              fi
+
+              http_code=$response
+
+              if [[ $http_code -eq 429 ]]; then
+                # Rate limited, retry after waiting
+                echo "Rate limited (HTTP 429). Retrying after $wait_time seconds..."
+                sleep $wait_time
+                retry=$((retry + 1))
+                wait_time=$((wait_time * 2))
+              elif [[ $http_code -ge 200 && $http_code -lt 300 ]]; then
+                # Success, return the response body
+                cat "/tmp/response_body.json"
+                return 0
+              else
+                # Other error
+                echo "Error $http_code from Docker Hub API:"
+                cat "/tmp/response_body.json"
+
+                if [[ $retry -ge $MAX_RETRIES - 1 ]]; then
+                  echo "Max retries reached. Failing."
+                  return 1
+                fi
+
+                echo "Retrying after $wait_time seconds..."
+                sleep $wait_time
+                retry=$((retry + 1))
+                wait_time=$((wait_time * 2))
+              fi
+            done
+
+            return 1
+          }
+
           while :; do
             URL="https://hub.docker.com/v2/repositories/${REPO}/tags?page_size=${PAGE_SIZE}&page=${PAGE}"
             echo "Fetching page $PAGE from $URL"
-            RESP=$(curl -s "$URL")
+
+            RESP=$(fetch_page "$URL")
+            if [[ $? -ne 0 ]]; then
+              echo "Failed to fetch tags from Docker Hub after multiple retries"
+              exit 1
+            fi
+
             COUNT=$(echo "$RESP" | jq '.results | length')
             echo "$RESP" | jq -c '.results[]' >> "$TAGS_FILE"
             NEXT=$(echo "$RESP" | jq -r '.next')
+
             if [ "$NEXT" = "null" ] || [ "$COUNT" -eq 0 ]; then
               break
             fi
+
             PAGE=$((PAGE+1))
           done
 
