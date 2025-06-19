@@ -49,12 +49,13 @@ jobs:
           }
 
           # Extract supported versions with proper validation
-          SUPPORTED_VERSIONS=$(jq -r '.versions[] | select(.end_of_full_support == false) |
+          JQ_FILTER='.versions[] | select(.end_of_full_support == false) |
             if has("latest_release") and .latest_release != null and .latest_release | has("release") and .latest_release.release != null then
               .latest_release.release
             else
               empty
-            end' .github/zabbix-versions.json | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+            end'
+          SUPPORTED_VERSIONS=$(jq -r "$JQ_FILTER" .github/zabbix-versions.json | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
 
           if [ -z "$SUPPORTED_VERSIONS" ]; then
             echo "::error::No supported versions found in Zabbix API response"
