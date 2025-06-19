@@ -1,6 +1,8 @@
 name: Build Historical Versions
 
 on:
+  schedule:
+    - cron: '0 0 * * 0'  # Run Sunday at midnight UTC
   workflow_dispatch:
     inputs:
       min_version:
@@ -21,6 +23,14 @@ on:
         required: false
         type: boolean
         default: false
+  push:
+    branches:
+      - main
+    paths:
+      - 'Dockerfile'
+      - 'scripts/**'
+      - 'mibs/**'
+      - '.github/workflows/**'
 
 # Ensure we don't run concurrent workflows of the same type
 concurrency:
@@ -114,9 +124,10 @@ jobs:
 
       - name: Filter and process versions
         id: generate-matrix
+        shell: bash
         run: |
           set -e
-          echo "Processing versions..."
+          echo "Processing versions with JSON-based approach..."
 
           # Get all versions from Docker Hub
           ALL_VERSIONS="${{ needs.get-dockerhub-tags.outputs.all_versions }}"
@@ -138,142 +149,185 @@ jobs:
           SUPPORTED_SERIES_JSON=$(echo "$SUPPORTED_VERSIONS_JSON" | jq '[.[] | split(".")[0:2] | join(".")]' | jq 'unique')
           echo "Supported series: $(echo "$SUPPORTED_SERIES_JSON" | jq -c .)"
 
-          # Filter versions to only those in supported series
+          # Get image name and env variables
+          IMAGE_NAME="${{ steps.set-image-name.outputs.image_name }}"
+          UPSTREAM_REPO="${{ env.UPSTREAM_REPO }}"
+          FORCE_REBUILD="${{ inputs.force_rebuild }}"
+          BUILD_ALL_PATCHES="${{ inputs.build_all_patches }}"
+
+          # Filter versions to only those in supported series and add metadata
           FILTERED_VERSIONS_JSON=$(echo "$ALL_VERSIONS_JSON $SUPPORTED_SERIES_JSON" | \
-            jq -s '
+            jq -s --arg force "$FORCE_REBUILD" '
               .[0] as $all_versions |
               .[1] as $supported_series |
               $all_versions |
+              # Filter to only supported series
               map(select(
                 . as $version |
                 $supported_series |
                 map($version | startswith(.)) |
                 any
               )) |
+              # Sort versions numerically
               sort_by(
                 . | split(".") |
                 map(tonumber)
-              )
+              ) |
+              # Convert to objects with metadata
+              map({
+                zabbix_version: .,
+                major_minor: (. | split(".")[0:2] | join(".")),
+                image_tag: ("ubuntu-" + .),
+                upstream_exists: false,  # Placeholder to be filled later
+                image_exists: false,     # Placeholder to be filled later
+                should_build: ($force == "true")  # Default based on force flag
+              })
             ')
 
-          # Get image name for checking
-          IMAGE_NAME="${{ steps.set-image-name.outputs.image_name }}"
-          UPSTREAM_REPO="${{ env.UPSTREAM_REPO }}"
-          FORCE_REBUILD="${{ inputs.force_rebuild }}"
-          BUILD_ALL_PATCHES="${{ inputs.build_all_patches }}"
+          echo "Created version objects: $(echo "$FILTERED_VERSIONS_JSON" | jq -c 'length') versions"
 
-          echo "Checking image existence..."
+          # Step 1: Create a list of all tags to check with docker manifest
+          # We'll first check upstream tags, since we only need to check our images for versions where upstream exists
 
-          # Initialize an empty array for results
-          FILTERED_RESULTS="[]"
+          echo "Checking upstream image existence..."
+          UPSTREAM_CHECK_RESULT="{}"
 
-          # Process versions directly from the filtered JSON array
-          echo "$FILTERED_VERSIONS_JSON" | jq -c '.[]' | while read -r VERSION; do
-            # Remove quotes from version string
-            VERSION=$(echo $VERSION | tr -d '"')
-            MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
-            IMAGE_TAG="ubuntu-$VERSION"
+          # Process in batches to avoid overwhelming Docker Hub
+          echo "$FILTERED_VERSIONS_JSON" | jq -c '.[]' | while read -r VERSION_OBJ; do
+            VERSION=$(echo "$VERSION_OBJ" | jq -r '.zabbix_version')
+            TAG=$(echo "$VERSION_OBJ" | jq -r '.image_tag')
 
-            # Check if upstream image exists
-            UPSTREAM_EXISTS=false
-            if docker manifest inspect "$UPSTREAM_REPO:$IMAGE_TAG" &>/dev/null; then
-              UPSTREAM_EXISTS=true
+            # Check upstream image existence
+            if docker manifest inspect "$UPSTREAM_REPO:$TAG" &>/dev/null; then
+              # Add to our upstream check results
+              UPSTREAM_CHECK_RESULT=$(echo "$UPSTREAM_CHECK_RESULT" | jq --arg version "$VERSION" '. + {($version): true}')
+              echo "✓ Upstream exists: $VERSION"
+            else
+              UPSTREAM_CHECK_RESULT=$(echo "$UPSTREAM_CHECK_RESULT" | jq --arg version "$VERSION" '. + {($version): false}')
+              echo "✗ No upstream: $VERSION"
             fi
-
-            # Only check our image if upstream exists and not forcing rebuild
-            IMAGE_EXISTS=false
-            if [[ "$UPSTREAM_EXISTS" == true && "$FORCE_REBUILD" != "true" ]]; then
-              if docker manifest inspect "$IMAGE_NAME:$IMAGE_TAG" &>/dev/null; then
-                IMAGE_EXISTS=true
-              fi
-            fi
-
-            # Determine if we should build
-            SHOULD_BUILD=false
-            if [[ "$FORCE_REBUILD" == "true" || ( "$UPSTREAM_EXISTS" == true && "$IMAGE_EXISTS" == false ) ]]; then
-              SHOULD_BUILD=true
-            fi
-
-            # If we should build, add to the filtered results
-            if [ "$SHOULD_BUILD" = true ]; then
-              # Create a JSON object for this version
-              VERSION_JSON=$(jq -n \
-                --arg version "$VERSION" \
-                --arg major_minor "$MAJOR_MINOR" \
-                --argjson upstream_exists "$UPSTREAM_EXISTS" \
-                --argjson image_exists "$IMAGE_EXISTS" \
-                --argjson should_build "$SHOULD_BUILD" \
-                '{
-                  "zabbix_version": $version,
-                  "major_minor": $major_minor,
-                  "upstream_exists": $upstream_exists,
-                  "image_exists": $image_exists,
-                  "should_build": $should_build
-                }')
-
-              # Append to our filtered results
-              FILTERED_RESULTS=$(echo "$FILTERED_RESULTS" | jq ". + [$VERSION_JSON]")
-            fi
-
-            # Progress indicator
-            echo "Checked version: $VERSION (upstream: $UPSTREAM_EXISTS, exists: $IMAGE_EXISTS, build: $SHOULD_BUILD)"
           done
 
-          # Handle build_all_patches mode
-          if [[ "$BUILD_ALL_PATCHES" == "true" ]]; then
-            echo "Processing all patches mode..."
+          # If force_rebuild is false, check our images for versions where upstream exists
+          echo "Checking our image existence..."
+          IMAGE_CHECK_RESULT="{}"
 
-            # Create a lookup table of versions to check
-            VERSIONS_TO_CHECK=$(echo "$FILTERED_RESULTS" | jq '[
+          if [ "$FORCE_REBUILD" != "true" ]; then
+            # Extract versions where upstream exists
+            UPSTREAM_EXISTS_VERSIONS=$(echo "$UPSTREAM_CHECK_RESULT" | jq 'to_entries | map(select(.value == true)) | map(.key)')
+
+            # Check our images only for versions where upstream exists
+            echo "$UPSTREAM_EXISTS_VERSIONS" | jq -c '.[]' | while read -r VERSION; do
+              # Remove quotes from version
+              VERSION=$(echo "$VERSION" | tr -d '"')
+              TAG="ubuntu-$VERSION"
+
+              if docker manifest inspect "$IMAGE_NAME:$TAG" &>/dev/null; then
+                IMAGE_CHECK_RESULT=$(echo "$IMAGE_CHECK_RESULT" | jq --arg version "$VERSION" '. + {($version): true}')
+                echo "✓ Our image exists: $VERSION"
+              else
+                IMAGE_CHECK_RESULT=$(echo "$IMAGE_CHECK_RESULT" | jq --arg version "$VERSION" '. + {($version): false}')
+                echo "✗ Our image missing: $VERSION"
+              fi
+            done
+          fi
+
+          # Now combine all the information using jq into a final filtered set of versions to build
+          FILTERED_RESULTS=$(echo "$FILTERED_VERSIONS_JSON $UPSTREAM_CHECK_RESULT $IMAGE_CHECK_RESULT" | \
+            jq -s --arg force "$FORCE_REBUILD" '
+              .[0] as $versions |
+              .[1] as $upstream_check |
+              .[2] as $image_check |
+
+              $versions | map(
+                . + {
+                  # Update upstream_exists from our check results
+                  upstream_exists: ($upstream_check[.zabbix_version] // false),
+                  # Update image_exists from our check results, only if upstream exists
+                  image_exists: (
+                    if ($upstream_check[.zabbix_version] == true) then
+                      ($image_check[.zabbix_version] // false)
+                    else
+                      false
+                    end
+                  )
+                } |
+                # Now calculate should_build based on all factors
+                . + {
+                  should_build: (
+                    ($force == "true") or
+                    (
+                      .upstream_exists == true and
+                      .image_exists == false
+                    )
+                  )
+                }
+              ) |
+              # Only keep versions we should build
+              map(select(.should_build == true))
+            ')
+
+          # Handle build_all_patches mode using JSON operations
+          if [[ "$BUILD_ALL_PATCHES" == "true" ]]; then
+            echo "Processing all patches mode with JSON approach..."
+
+            # Create a list of all possible patch versions for each major.minor series
+            # This is more complex as we need to check all possible patch versions
+            # First, extract all major.minor series and their max patch numbers
+            SERIES_INFO=$(echo "$FILTERED_RESULTS" | jq '
               # Group by major_minor
               group_by(.major_minor) |
-              # For each group
-              .[] |
-              # Find the highest patch version
-              max_by(.zabbix_version | split(".") | .[2] | tonumber) |
-              # Extract the information we need
-              {
-                major_minor: .major_minor,
-                max_version: .zabbix_version,
-                max_patch: (.zabbix_version | split(".") | .[2] | tonumber)
-              }
-            ]')
+              # For each group, find highest patch and extract info
+              map({
+                major_minor: .[0].major_minor,
+                max_patch: (
+                  map(.zabbix_version | split(".") | .[2] | tonumber) | max
+                )
+              })
+            ')
 
-            # Process each major.minor series
-            echo "$VERSIONS_TO_CHECK" | jq -c '.[]' | while read -r VERSION_INFO; do
-              MAJOR_MINOR=$(echo "$VERSION_INFO" | jq -r '.major_minor')
-              MAX_PATCH=$(echo "$VERSION_INFO" | jq -r '.max_patch')
+            # Process each series to check all possible patch versions
+            ALL_PATCHES_JSON="[]"
 
-              echo "Processing $MAJOR_MINOR series, patches 0-$MAX_PATCH..."
+            echo "$SERIES_INFO" | jq -c '.[]' | while read -r SERIES; do
+              MAJOR_MINOR=$(echo "$SERIES" | jq -r '.major_minor')
+              MAX_PATCH=$(echo "$SERIES" | jq -r '.max_patch')
 
-              # Create all patch versions and check if they should be built
+              echo "Checking all patches for $MAJOR_MINOR series (0-$MAX_PATCH)..."
+
+              # Check each patch version
               for ((PATCH=0; PATCH<=MAX_PATCH; PATCH++)); do
                 FULL_VERSION="${MAJOR_MINOR}.${PATCH}"
-                UPSTREAM_TAG="ubuntu-$FULL_VERSION"
+                TAG="ubuntu-$FULL_VERSION"
 
-                # Check if upstream image exists
-                if docker manifest inspect "$UPSTREAM_REPO:$UPSTREAM_TAG" &>/dev/null; then
-                  # Create a JSON object for this patch version
+                # Check only if upstream exists
+                if docker manifest inspect "$UPSTREAM_REPO:$TAG" &>/dev/null; then
+                  # Create patch version entry
                   PATCH_JSON=$(jq -n \
                     --arg version "$FULL_VERSION" \
                     --arg major_minor "$MAJOR_MINOR" \
                     '{
-                      "zabbix_version": $version,
-                      "major_minor": $major_minor,
-                      "upstream_exists": true,
-                      "should_build": true
+                      zabbix_version: $version,
+                      major_minor: $major_minor,
+                      image_tag: ("ubuntu-" + $version),
+                      upstream_exists: true,
+                      image_exists: false,
+                      should_build: true
                     }')
 
-                  # Add directly to the filtered results
-                  FILTERED_RESULTS=$(echo "$FILTERED_RESULTS" | jq ". + [$PATCH_JSON]")
-
-                  echo "Added patch version: $FULL_VERSION"
+                  # Add to our all patches JSON array
+                  ALL_PATCHES_JSON=$(echo "$ALL_PATCHES_JSON" | jq --argjson patch "$PATCH_JSON" '. + [$patch]')
+                  echo "✓ Added patch version: $FULL_VERSION"
+                else
+                  echo "✗ Skipping patch version (no upstream): $FULL_VERSION"
                 fi
               done
             done
 
-            # Deduplicate results
-            FILTERED_RESULTS=$(echo "$FILTERED_RESULTS" | jq 'unique_by(.zabbix_version)')
+            # Combine and deduplicate
+            FILTERED_RESULTS=$(echo "$FILTERED_RESULTS $ALL_PATCHES_JSON" | jq -s '
+              .[0] + .[1] | unique_by(.zabbix_version)
+            ')
           fi
 
           # Extract the matrix-compatible format and versions CSV
