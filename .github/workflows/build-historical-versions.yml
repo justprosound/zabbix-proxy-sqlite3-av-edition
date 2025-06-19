@@ -149,6 +149,9 @@ jobs:
           SUPPORTED_SERIES_JSON=$(echo "$SUPPORTED_VERSIONS_JSON" | jq '[.[] | split(".")[0:2] | join(".")]' | jq 'unique')
           echo "Supported series: $(echo "$SUPPORTED_SERIES_JSON" | jq -c .)"
 
+          # Count original versions before filtering
+          TOTAL_VERSIONS_COUNT=$(echo "$ALL_VERSIONS_JSON" | jq 'length')
+
           # Get image name and env variables
           IMAGE_NAME="${{ steps.set-image-name.outputs.image_name }}"
           UPSTREAM_REPO="${{ env.UPSTREAM_REPO }}"
@@ -184,7 +187,12 @@ jobs:
               })
             ')
 
-          echo "Created version objects: $(echo "$FILTERED_VERSIONS_JSON" | jq -c 'length') versions"
+          # Count filtered versions and calculate skipped
+          FILTERED_VERSIONS_COUNT=$(echo "$FILTERED_VERSIONS_JSON" | jq -c 'length')
+          SKIPPED_VERSIONS_COUNT=$((TOTAL_VERSIONS_COUNT - FILTERED_VERSIONS_COUNT))
+
+          echo "Filtered version objects: $FILTERED_VERSIONS_COUNT (skipped $SKIPPED_VERSIONS_COUNT unsupported versions)"
+          echo "Optimized: Only checking existence for versions matching supported series"
 
           # Step 1: Create a list of all tags to check with docker manifest
           # We'll first check upstream tags, since we only need to check our images for versions where upstream exists
@@ -357,9 +365,10 @@ jobs:
           echo "## Build Matrix Generation" >> $GITHUB_STEP_SUMMARY
           echo "| Description | Value |" >> $GITHUB_STEP_SUMMARY
           echo "| ----------- | ----- |" >> $GITHUB_STEP_SUMMARY
-          echo "| Docker Hub Tags | $(echo "$ALL_VERSIONS_JSON" | jq 'length') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Hub Tags | $TOTAL_VERSIONS_COUNT |" >> $GITHUB_STEP_SUMMARY
           echo "| Supported Series | $(echo "$SUPPORTED_SERIES_JSON" | jq 'join(", ")') |" >> $GITHUB_STEP_SUMMARY
-          echo "| Filtered Versions | $(echo "$FILTERED_VERSIONS_JSON" | jq 'length') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Filtered Versions | $FILTERED_VERSIONS_COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Skipped Versions | $SKIPPED_VERSIONS_COUNT |" >> $GITHUB_STEP_SUMMARY
           echo "| Versions to Build | $(echo "$MATRIX_JSON" | jq '.include | length') |" >> $GITHUB_STEP_SUMMARY
           echo "| Build All Patches | $BUILD_ALL_PATCHES |" >> $GITHUB_STEP_SUMMARY
 
