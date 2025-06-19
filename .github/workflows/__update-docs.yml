@@ -105,52 +105,41 @@ jobs:
             cp "$file" "${file}.bak"
 
             # Replace explicit GITHUB_USERNAME placeholders
-            sed -i -E 's@ghcr\.io/GITHUB_USERNAME/@ghcr\.io/'$REPO_OWNER'/@g' "$file"
-            sed -i -E 's@ghcr\.io/GITHUB_USERNAME@ghcr\.io/'$REPO_OWNER'@g' "$file"
+            sed -i "s|ghcr\.io/GITHUB_USERNAME/|ghcr\.io/$REPO_OWNER/|g" "$file"
+            sed -i "s|ghcr\.io/GITHUB_USERNAME|ghcr\.io/$REPO_OWNER|g" "$file"
 
             # Handle specific Docker image repository references
-            sed -i -E 's@ghcr\.io/[^/]+/'$REPO_NAME'@ghcr\.io/'$REPO_OWNER'/'$REPO_NAME'@g' "$file"
+            sed -i "s|ghcr\.io/[^/]*/zabbix-proxy-sqlite3|ghcr\.io/$REPO_OWNER/$REPO_NAME|g" "$file"
 
             # Handle repository-owner placeholders with angle brackets
-            sed -i -E 's@ghcr\.io/<repository-owner>/@ghcr\.io/'$REPO_OWNER'/@g' "$file"
-            sed -i -E 's@github\.com/<repository-owner>/@github\.com/'$REPO_OWNER'/@g' "$file"
+            sed -i "s|ghcr\.io/<repository-owner>/|ghcr\.io/$REPO_OWNER/|g" "$file"
+            sed -i "s|github\.com/<repository-owner>/|github\.com/$REPO_OWNER/|g" "$file"
 
             # Handle image name placeholders - using the full repository name for consistency
             if [[ -n "$REPO_NAME" ]]; then
-              sed -i -E 's@<derived-image-name>@'$REPO_NAME'@g' "$file"
-              sed -i -E 's@zabbix-proxy-sqlite3@'$REPO_NAME'@g' "$file"
+              sed -i "s|<derived-image-name>|$REPO_NAME|g" "$file"
             fi
 
             # Handle footer links and other specific sections in README.md
             if [[ "$file" == *"README.md" ]]; then
               echo "Updating repository references in README.md..."
 
-              # Update the footer links with the current repository
-              # Use simpler, more robust patterns for matching URLs
-              sed -i -E 's@\[🌟 Star this repo\]\(https://github\.com/[^/]+/[^)]+@[🌟 Star this repo](https://github.com/'$REPO_OWNER'/'$REPO_NAME'@g' "$file"
-              sed -i -E 's@\[🐛 Report Bug\]\(https://github\.com/[^/]+/[^/]+/issues@[🐛 Report Bug](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/issues@g' "$file"
-              sed -i -E 's@\[💡 Request Feature\]\(https://github\.com/[^/]+/[^/]+/issues@[💡 Request Feature](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/issues@g' "$file"
+              # Update the footer links with the current repository using safer patterns
+              sed -i "s|\[🌟 Star this repo\](https://github\.com/[^/]*/[^)]*|\[🌟 Star this repo\](https://github.com/$REPO_OWNER/$REPO_NAME|g" "$file"
+              sed -i "s|\[🐛 Report Bug\](https://github\.com/[^/]*/[^/]*/issues|\[🐛 Report Bug\](https://github.com/$REPO_OWNER/$REPO_NAME/issues|g" "$file"
+              sed -i "s|\[💡 Request Feature\](https://github\.com/[^/]*/[^/]*/issues|\[💡 Request Feature\](https://github.com/$REPO_OWNER/$REPO_NAME/issues|g" "$file"
 
               # Update Documentation & Support section links
-              sed -i -E 's@\[Issue Tracker\]\(https://github\.com/[^/]+/[^/]+/issues@[Issue Tracker](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/issues@g' "$file"
-              sed -i -E 's@\[Discussions\]\(https://github\.com/[^/]+/[^/]+/discussions@[Discussions](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/discussions@g' "$file"
+              sed -i "s|\[Issue Tracker\](https://github\.com/[^/]*/[^/]*/issues|\[Issue Tracker\](https://github.com/$REPO_OWNER/$REPO_NAME/issues|g" "$file"
+              sed -i "s|\[Discussions\](https://github\.com/[^/]*/[^/]*/discussions|\[Discussions\](https://github.com/$REPO_OWNER/$REPO_NAME/discussions|g" "$file"
 
-              # Update badge links
-              sed -i -E 's@\(https://github\.com/[^/]+/'$REPO_NAME'/actions@(https://github.com/'$REPO_OWNER'/'$REPO_NAME'/actions@g' "$file"
-              sed -i -E 's@\(https://img\.shields\.io/github/v/release/[^/]+/'$REPO_NAME'@(https://img.shields.io/github/v/release/'$REPO_OWNER'/'$REPO_NAME'@g' "$file"
+              # Update badge links - using safer patterns to avoid regex issues
+              sed -i "s|https://github.com/[^/]*/zabbix-proxy-sqlite3-av-edition/actions|https://github.com/$REPO_OWNER/$REPO_NAME/actions|g" "$file"
+              sed -i "s|https://img.shields.io/github/v/release/[^/]*/zabbix-proxy-sqlite3-av-edition|https://img.shields.io/github/v/release/$REPO_OWNER/$REPO_NAME|g" "$file"
 
-              # Update Documentation & Support section links
-              sed -i -E 's@\[Issue Tracker\]\(https://github\.com/[^/]+/[^/]+/issues\)@[Issue Tracker](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/issues)@g' "$file"
-              sed -i -E 's@\[Discussions\]\(https://github\.com/[^/]+/[^/]+/discussions\)@[Discussions](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/discussions)@g' "$file"
-
-              # Update badge URLs with shorter search/replace patterns
-              # CI badge
-              PATTERN="s@(https://github.com/)[^/]+/($REPO_NAME/actions/@\1$REPO_OWNER/\2@g"
-              sed -i -E "$PATTERN" "$file"
-
-              # Release badge
-              PATTERN="s@(https://img.shields.io/github/v/release/)[^/]+/($REPO_NAME)@\1$REPO_OWNER/\2@g"
-              sed -i -E "$PATTERN" "$file"
+              # Generic badge links update for any repository pattern
+              sed -i "s|https://github.com/[^/]*/$REPO_NAME/actions|https://github.com/$REPO_OWNER/$REPO_NAME/actions|g" "$file"
+              sed -i "s|https://img.shields.io/github/v/release/[^/]*/$REPO_NAME|https://img.shields.io/github/v/release/$REPO_OWNER/$REPO_NAME|g" "$file"
             fi
 
             # Check if the file was modified
@@ -170,12 +159,24 @@ jobs:
 
           echo "=== Summary ==="
           echo "Modified $MODIFIED_COUNT markdown files with repository references"
+          echo "## Repository References Update" >> $GITHUB_STEP_SUMMARY
+          echo "- Updated $MODIFIED_COUNT markdown files with repository references" >> $GITHUB_STEP_SUMMARY
+          echo "- Repository Owner: \`$REPO_OWNER\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Repository Name: \`$REPO_NAME\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Commit changes back to repository
         id: commit_changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+
+          # Check if there are any changes to commit
+          if git diff --exit-code --quiet; then
+            echo "No changes to commit"
+            echo "## Git Status" >> $GITHUB_STEP_SUMMARY
+            echo "No changes were made to the repository - everything was already up-to-date" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
 
           # Find all markdown files that might have changed
           MARKDOWN_FILES=$(find . -type f -name "*.md" | grep -v "node_modules\|vendor\|\.git")
