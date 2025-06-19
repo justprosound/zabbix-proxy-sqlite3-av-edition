@@ -36,10 +36,10 @@ jobs:
         run: |
           # Fetch Zabbix version data
           echo "Fetching data from Zabbix API..."
-          curl -s -f -S "https://services.zabbix.com/updates/v1" > .github/zabbix-versions.json || {
+          if ! curl -s -f -S "https://services.zabbix.com/updates/v1" > .github/zabbix-versions.json; then
             echo "::error::Failed to fetch Zabbix version data from API"
             exit 1
-          }
+          fi
 
           # Validate the JSON response
           if ! jq . .github/zabbix-versions.json > /dev/null; then
