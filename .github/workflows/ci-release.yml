@@ -23,6 +23,11 @@ on:
       - 'mibs/**'
       - '.github/workflows/**'
 
+# Ensure we don't run concurrent builds for the same ref/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Security: Minimal required permissions
 permissions:
   contents: write
@@ -131,6 +136,11 @@ jobs:
   # Run build for each matrix item
   build-containers:
     needs: [matrix-setup, detect-versions]
+    # Per-version concurrency group to allow parallel builds of different versions
+    # but cancel in-progress builds for the same version
+    concurrency:
+      group: build-${{ matrix.zabbix_version }}-${{ github.ref }}
+      cancel-in-progress: true
     strategy:
       matrix: ${{ fromJson(needs.matrix-setup.outputs.matrix) }}
       fail-fast: false
