@@ -1,4 +1,4 @@
-name: -- reusable -- Cleanup on Failure
+name: ◆ reusable | Cleanup on Failure
 
 on:
   workflow_call:

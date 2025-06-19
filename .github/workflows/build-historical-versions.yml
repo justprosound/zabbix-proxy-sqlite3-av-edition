@@ -16,6 +16,11 @@ on:
         description: 'Optional custom image name (e.g. "my-registry.com/user/repo")'
         required: false
         default: ''
+      build_all_patches:
+        description: 'Build all patch versions (0 to latest) for each major.minor series'
+        required: false
+        type: boolean
+        default: false
 
 # Security: Minimal required permissions
 permissions:
@@ -30,7 +35,7 @@ env:
   ALLOWED_REGISTRIES: "ghcr.io"
   REGISTRY: "ghcr.io"
   # Default repo name, overridable via custom_image_name
-  REPO_NAME: "zabbix-proxy-sqlite3"
+  REPO_NAME: "zabbix-proxy-sqlite3-av-edition"
   # Default base name for documentation and references
   BASE_NAME: "Zabbix Proxy SQLite3 AV Edition"
   # Docker Hub upstream repository
@@ -39,35 +44,24 @@ env:
 jobs:
   # Step 1: Get all supported Zabbix versions from API
   get-supported-versions:
-    uses: ./.github/workflows/_version-detection.yml
+    uses: ./.github/workflows/__version-detection.yml
 
   # Step 2: Get all Docker Hub tags matching our pattern
   get-dockerhub-tags:
-    uses: ./.github/workflows/_dockerhub-tags.yml
+    uses: ./.github/workflows/__dockerhub-tags.yml
     with:
       repo: "zabbix/zabbix-proxy-sqlite3"
       tag_pattern: '^ubuntu-[0-9]+\.[0-9]+\.[0-9]+$'
       min_version: "${{ inputs.min_version }}"
 
-  # Step 3: Filter versions to only include those from supported series
-  filter-versions:
+  # Step 3: Process versions and create build matrix
+  prepare-build-matrix:
     needs: [get-supported-versions, get-dockerhub-tags]
-    uses: ./.github/workflows/_filter-versions.yml
-    with:
-      versions: "${{ needs.get-dockerhub-tags.outputs.all_versions }}"
-      min_version: "${{ inputs.min_version }}"
-      supported_only: true
-
-  # Step 4: Check which images already exist
-  check-existing-images:
-    needs: filter-versions
     runs-on: ubuntu-latest
-    if: ${{ fromJson(needs.filter-versions.outputs.matrix).include[0] != null }}
-    strategy:
-      matrix: ${{ fromJson(needs.filter-versions.outputs.matrix) }}
-      fail-fast: false
     outputs:
-      versions_to_build: ${{ steps.collect-versions.outputs.versions_to_build }}
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+      versions_to_build: ${{ steps.generate-matrix.outputs.versions_to_build }}
+      target_image: ${{ steps.set-image-name.outputs.image_name }}
     steps:
       - name: Set image name
         id: set-image-name
@@ -106,131 +100,166 @@ jobs:
 
           echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
 
-      - name: Check if image already exists
-        id: check-image
+      - name: Filter and process versions
+        id: generate-matrix
         run: |
-          ZABBIX_VERSION="${{ matrix.zabbix_version }}"
-          IMAGE_TAG="ubuntu-$ZABBIX_VERSION"
-          FULL_IMAGE="${{ steps.set-image-name.outputs.image_name }}:$IMAGE_TAG"
+          set -e
+          echo "Processing versions..."
 
-          echo "Checking if image $FULL_IMAGE exists"
-
-          # Try to get image manifest
-          if docker manifest inspect "$FULL_IMAGE" &>/dev/null; then
-            echo "Image $FULL_IMAGE already exists"
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Image $FULL_IMAGE does not exist"
-            echo "exists=false" >> $GITHUB_OUTPUT
+          # Get all versions from Docker Hub
+          ALL_VERSIONS="${{ needs.get-dockerhub-tags.outputs.all_versions }}"
+          if [ -z "$ALL_VERSIONS" ]; then
+            echo "No versions found from Docker Hub"
+            echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+            echo "versions_to_build=" >> $GITHUB_OUTPUT
+            exit 0
           fi
 
-          # Check if upstream image exists
-          UPSTREAM_IMAGE="${{ env.UPSTREAM_REPO }}:ubuntu-$ZABBIX_VERSION"
-          if docker manifest inspect "$UPSTREAM_IMAGE" &>/dev/null; then
-            echo "Upstream image $UPSTREAM_IMAGE exists"
-            echo "upstream_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Upstream image $UPSTREAM_IMAGE does not exist"
-            echo "upstream_exists=false" >> $GITHUB_OUTPUT
+          # Get supported series (major.minor) from Zabbix API
+          SUPPORTED_SERIES=$(echo "${{ needs.get-supported-versions.outputs.all_versions }}" | tr ',' '\n' | \
+            awk -F. '{print $1"."$2}' | sort -u | tr '\n' '|' | sed 's/|$//')
+
+          echo "Supported series: ${SUPPORTED_SERIES}"
+
+          # Filter versions by supported series
+          FILTERED_VERSIONS=$(echo "$ALL_VERSIONS" | tr ',' '\n' | grep -E "^(${SUPPORTED_SERIES})\." | sort -V)
+
+          # Prepare for build matrix
+          IMAGE_NAME="${{ steps.set-image-name.outputs.image_name }}"
+          VERSIONS_TO_BUILD=()
+          BUILD_MATRIX_ITEMS=()
+
+          # Process each version
+          echo "$FILTERED_VERSIONS" | while read -r VERSION; do
+            # Skip empty lines
+            [ -z "$VERSION" ] && continue
+
+            MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
+            IMAGE_TAG="ubuntu-$VERSION"
+            FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
+            UPSTREAM_IMAGE="${{ env.UPSTREAM_REPO }}:${IMAGE_TAG}"
+
+            # Check if our image exists
+            if docker manifest inspect "$FULL_IMAGE" &>/dev/null; then
+              IMAGE_EXISTS="true"
+            else
+              IMAGE_EXISTS="false"
+            fi
+
+            # Check if upstream image exists
+            if docker manifest inspect "$UPSTREAM_IMAGE" &>/dev/null; then
+              UPSTREAM_EXISTS="true"
+            else
+              UPSTREAM_EXISTS="false"
+              continue  # Skip if upstream doesn't exist
+            fi
+
+            # Determine if we should build
+            if [[ "${{ inputs.force_rebuild }}" == "true" ]] || ([[ "$IMAGE_EXISTS" == "false" ]] && [[ "$UPSTREAM_EXISTS" == "true" ]]); then
+              echo "Will build version $VERSION"
+
+              if [[ "${{ inputs.build_all_patches }}" == "true" ]]; then
+                # If building all patches, record the major.minor and highest patch
+                # We'll expand these later
+                echo "$VERSION" >> /tmp/versions_to_build.txt
+              else
+                # Just add this specific version to the build list
+                echo "{\"zabbix_version\":\"$VERSION\",\"major_minor\":\"$MAJOR_MINOR\"}" >> /tmp/matrix_items.json
+              fi
+            fi
+          done
+
+          # Handle build_all_patches mode
+          if [[ "${{ inputs.build_all_patches }}" == "true" ]] && [ -f /tmp/versions_to_build.txt ]; then
+            # Group by major.minor and find highest patch for each
+            declare -A MAJOR_MINOR_VERSIONS
+            while read -r VERSION; do
+              MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
+              PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+              # Record highest patch for each major.minor
+              if [[ -z "${MAJOR_MINOR_VERSIONS[$MAJOR_MINOR]}" ]] ||
+                 [[ $PATCH -gt $(echo "${MAJOR_MINOR_VERSIONS[$MAJOR_MINOR]}" | cut -d. -f3) ]]; then
+                MAJOR_MINOR_VERSIONS[$MAJOR_MINOR]="$VERSION"
+              fi
+            done < /tmp/versions_to_build.txt
+
+            # For each major.minor, expand to all patches
+            for MAJOR_MINOR in "${!MAJOR_MINOR_VERSIONS[@]}"; do
+              VERSION="${MAJOR_MINOR_VERSIONS[$MAJOR_MINOR]}"
+              MAX_PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+              # Generate all patches from 0 to MAX_PATCH
+              for ((PATCH=0; PATCH<=MAX_PATCH; PATCH++)); do
+                FULL_VERSION="${MAJOR_MINOR}.${PATCH}"
+
+                # Check if upstream image exists for this patch
+                UPSTREAM_TAG="ubuntu-$FULL_VERSION"
+                if docker manifest inspect "${{ env.UPSTREAM_REPO }}:${UPSTREAM_TAG}" &>/dev/null; then
+                  echo "{\"zabbix_version\":\"$FULL_VERSION\",\"major_minor\":\"$MAJOR_MINOR\"}" >> /tmp/matrix_items.json
+                fi
+              done
+            done
           fi
 
-      - name: Set build flag
-        id: set-build
-        run: |
-          FORCE_REBUILD="${{ inputs.force_rebuild }}"
-          IMAGE_EXISTS="${{ steps.check-image.outputs.exists }}"
-          UPSTREAM_EXISTS="${{ steps.check-image.outputs.upstream_exists }}"
+          # Create the final matrix
+          if [ -f /tmp/matrix_items.json ]; then
+            # Combine all items into a JSON array
+            MATRIX_JSON=$(echo '{"include":[' $(cat /tmp/matrix_items.json | tr '\n' ',' | sed 's/,$//') ']}')
 
-          # Build if:
-          # 1. Force rebuild is true OR
-          # 2. Image doesn't exist AND upstream image exists
-          if [[ "$FORCE_REBUILD" == "true" ]] || ([[ "$IMAGE_EXISTS" == "false" ]] && [[ "$UPSTREAM_EXISTS" == "true" ]]); then
-            echo "Need to build version ${{ matrix.zabbix_version }}"
-            echo "should_build=true" >> $GITHUB_OUTPUT
+            # Get a CSV list of versions for the summary
+            VERSIONS_CSV=$(echo "$MATRIX_JSON" | jq -r '.include[].zabbix_version' | tr '\n' ',' | sed 's/,$//')
+
+            echo "Generated build matrix with $(echo "$MATRIX_JSON" | jq '.include | length') versions"
+            echo "$MATRIX_JSON" | jq .
+
+            echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
+            echo "versions_to_build=$VERSIONS_CSV" >> $GITHUB_OUTPUT
           else
-            echo "Skip building version ${{ matrix.zabbix_version }}"
-            echo "should_build=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Collect versions to build
-        id: collect-versions
-        run: |
-          mkdir -p /tmp/versions_to_build
-
-          if [[ "${{ steps.set-build.outputs.should_build }}" == "true" ]]; then
-            echo "Adding version ${{ matrix.zabbix_version }} to build list"
-            echo "${{ matrix.zabbix_version }}" >> /tmp/versions_to_build/list.txt
-          fi
-
-          if [ -f "/tmp/versions_to_build/list.txt" ]; then
-            VERSIONS=$(cat /tmp/versions_to_build/list.txt | sort -V | tr '\n' ',' | sed 's/,$//')
-            echo "Versions to build: $VERSIONS"
-            echo "versions_to_build=$VERSIONS" >> $GITHUB_OUTPUT
-          else
-            echo "No versions to build"
+            echo "No versions need to be built"
+            echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
             echo "versions_to_build=" >> $GITHUB_OUTPUT
           fi
 
-  # Step 5: Expand versions to include all patches
-  expand-versions:
-    needs: check-existing-images
-    if: ${{ needs.check-existing-images.outputs.versions_to_build != '' }}
-    uses: ./.github/workflows/_expand-versions.yml
-    with:
-      versions: ${{ needs.check-existing-images.outputs.versions_to_build }}
+          # Add to step summary
+          echo "## Build Matrix Generation" >> $GITHUB_STEP_SUMMARY
+          echo "| Description | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| ----------- | ----- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Hub Tags | $(echo "$ALL_VERSIONS" | tr ',' '\n' | wc -l) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Supported Series | $(echo "$SUPPORTED_SERIES" | tr '|' ',' | sed 's/,/, /g') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Filtered Versions | $(echo "$FILTERED_VERSIONS" | wc -l) |" >> $GITHUB_STEP_SUMMARY
+          if [ -f /tmp/matrix_items.json ]; then
+            echo "| Versions to Build | $(cat /tmp/matrix_items.json | wc -l) |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Versions to Build | 0 |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "| Build All Patches | ${{ inputs.build_all_patches }} |" >> $GITHUB_STEP_SUMMARY
 
-  # Step 6: Build expanded versions
-  build-versions:
-    needs: expand-versions
-    if: ${{ fromJson(needs.expand-versions.outputs.matrix).include[0] != null }}
+  # Step 4: Build container images
+  build-images:
+    needs: prepare-build-matrix
+    if: ${{ fromJson(needs.prepare-build-matrix.outputs.matrix).include[0] != null }}
     strategy:
-      matrix: ${{ fromJson(needs.expand-versions.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.prepare-build-matrix.outputs.matrix) }}
       fail-fast: false
-    uses: ./.github/workflows/_build-container.yml
+    uses: ./.github/workflows/__build-container.yml
     with:
       zabbix_version: ${{ matrix.zabbix_version }}
       major_minor: ${{ matrix.major_minor }}
       latest_version: ${{ matrix.zabbix_version }}
 
-  # Step 7: Summary
+  # Step 5: Summary
   summary:
-    needs: [get-dockerhub-tags, filter-versions, check-existing-images, expand-versions, build-versions]
+    needs: [get-supported-versions, get-dockerhub-tags, prepare-build-matrix, build-images]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Set image name
-        id: set-image-name
-        run: |
-          # Check if a custom image name was provided
-          CUSTOM_IMAGE_NAME="${{ inputs.custom_image_name }}"
-
-          if [ -n "$CUSTOM_IMAGE_NAME" ]; then
-            # Use the custom image name
-            IMAGE_NAME="$CUSTOM_IMAGE_NAME"
-            echo "Using custom image name: $IMAGE_NAME"
-            # Extract repo name from custom image for documentation purposes
-            REPO_SHORT_NAME=$(echo "$CUSTOM_IMAGE_NAME" | awk -F'/' '{print $NF}')
-            echo "Using custom repo short name: $REPO_SHORT_NAME"
-          else
-            # Use default naming pattern
-            REGISTRY="${{ env.REGISTRY }}"
-            REPO_NAME="${{ env.REPO_NAME }}"
-            REPO_OWNER="${{ github.repository_owner }}"
-
-            # Set the full image name
-            IMAGE_NAME="${REGISTRY}/${REPO_OWNER}/${REPO_NAME}"
-            REPO_SHORT_NAME="${REPO_NAME}"
-            echo "Using default image name: $IMAGE_NAME"
-          fi
-
-          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-
       - name: Summarize build results
         run: |
           echo "# Historical Version Build Results" >> $GITHUB_STEP_SUMMARY
 
           # Show image name information
-          IMAGE_NAME="${{ steps.set-image-name.outputs.image_name }}"
+          IMAGE_NAME="${{ needs.prepare-build-matrix.outputs.target_image }}"
           echo "## Image Information" >> $GITHUB_STEP_SUMMARY
           echo "Images built with name: **$IMAGE_NAME**" >> $GITHUB_STEP_SUMMARY
 
@@ -239,49 +268,43 @@ jobs:
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # Step 1: Show available versions from Docker Hub
-          echo "## Docker Hub Tags" >> $GITHUB_STEP_SUMMARY
-          DOCKERHUB_TAG_COUNT=$(echo "${{ needs.get-dockerhub-tags.outputs.all_versions }}" | tr ',' '\n' | wc -l)
-          echo "Found $DOCKERHUB_TAG_COUNT tags from Docker Hub for '${{ env.UPSTREAM_REPO }}'" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          # Show versions information
+          echo "## Version Information" >> $GITHUB_STEP_SUMMARY
+          echo "| Description | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "| ----------- | ----- |" >> $GITHUB_STEP_SUMMARY
 
-          # Step 2: Show filtered versions (supported series)
-          echo "## Filtered Versions (Supported Series)" >> $GITHUB_STEP_SUMMARY
-          FILTERED_COUNT=$(echo "${{ needs.filter-versions.outputs.filtered_versions }}" | tr ',' '\n' | wc -l)
-          echo "Found $FILTERED_COUNT versions from supported series" >> $GITHUB_STEP_SUMMARY
+          # Docker Hub tags count
+          DOCKERHUB_TAG_COUNT=$(echo "${{ needs.get-dockerhub-tags.outputs.all_versions }}" | tr ',' '\n' | grep -v '^$' | wc -l)
+          echo "| Docker Hub Tags | $DOCKERHUB_TAG_COUNT |" >> $GITHUB_STEP_SUMMARY
 
-          # Step 3: Show versions selected for building
-          echo "## Versions Selected for Building" >> $GITHUB_STEP_SUMMARY
-          if [[ -n "${{ needs.check-existing-images.outputs.versions_to_build }}" ]]; then
-            VERSIONS_TO_BUILD=$(echo "${{ needs.check-existing-images.outputs.versions_to_build }}" | tr ',' '\n')
-            BUILD_COUNT=$(echo "$VERSIONS_TO_BUILD" | wc -l)
-            echo "Selected $BUILD_COUNT versions for building:" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            echo "$VERSIONS_TO_BUILD" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
+          # Supported versions count
+          SUPPORTED_COUNT=$(echo "${{ needs.get-supported-versions.outputs.all_versions }}" | tr ',' '\n' | grep -v '^$' | wc -l)
+          echo "| Supported Zabbix Versions | $SUPPORTED_COUNT |" >> $GITHUB_STEP_SUMMARY
+
+          # Versions to build count
+          if [[ -n "${{ needs.prepare-build-matrix.outputs.versions_to_build }}" ]]; then
+            BUILD_COUNT=$(echo "${{ needs.prepare-build-matrix.outputs.versions_to_build }}" | tr ',' '\n' | grep -v '^$' | wc -l)
+            echo "| Versions to Build | $BUILD_COUNT |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "No versions needed to be built. All requested versions either:" >> $GITHUB_STEP_SUMMARY
-            echo "- Already exist in the registry" >> $GITHUB_STEP_SUMMARY
-            echo "- Have no upstream images available" >> $GITHUB_STEP_SUMMARY
+            echo "| Versions to Build | 0 |" >> $GITHUB_STEP_SUMMARY
           fi
+
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # Step 4: Show expanded versions
-          if [[ -n "${{ needs.check-existing-images.outputs.versions_to_build }}" ]]; then
-            echo "## Expanded Versions" >> $GITHUB_STEP_SUMMARY
-            EXPANDED_VERSIONS=$(echo "${{ needs.expand-versions.outputs.expanded_versions }}" | tr ',' '\n')
-            EXPANDED_COUNT=$(echo "$EXPANDED_VERSIONS" | wc -l)
-            echo "Expanded to $EXPANDED_COUNT versions (including all patch releases):" >> $GITHUB_STEP_SUMMARY
+          # Show versions selected for building
+          echo "## Versions Selected for Building" >> $GITHUB_STEP_SUMMARY
+          if [[ -n "${{ needs.prepare-build-matrix.outputs.versions_to_build }}" ]]; then
+            VERSIONS_TO_BUILD=$(echo "${{ needs.prepare-build-matrix.outputs.versions_to_build }}" | tr ',' '\n')
 
-            # Group by major.minor series
-            echo "### Versions by Release Series" >> $GITHUB_STEP_SUMMARY
+            # Group by major.minor series for better readability
+            echo "### By Release Series" >> $GITHUB_STEP_SUMMARY
 
             # Extract major.minor versions
-            MAJOR_MINORS=$(echo "$EXPANDED_VERSIONS" | cut -d. -f1-2 | sort -V -u)
+            MAJOR_MINORS=$(echo "$VERSIONS_TO_BUILD" | cut -d. -f1-2 | sort -V -u)
 
             for MM in $MAJOR_MINORS; do
               # Get all versions for this major.minor
-              MM_VERSIONS=$(echo "$EXPANDED_VERSIONS" | grep "^$MM\." | sort -V)
+              MM_VERSIONS=$(echo "$VERSIONS_TO_BUILD" | grep "^$MM\." | sort -V)
               MM_COUNT=$(echo "$MM_VERSIONS" | wc -l)
 
               echo "#### $MM Series ($MM_COUNT versions)" >> $GITHUB_STEP_SUMMARY
@@ -290,26 +313,31 @@ jobs:
               echo '' >> $GITHUB_STEP_SUMMARY
               echo '```' >> $GITHUB_STEP_SUMMARY
             done
-
-            # Step 5: Show build status
-            echo "## Build Status" >> $GITHUB_STEP_SUMMARY
-            BUILD_JOB_STATUS="${{ needs.build-versions.result }}"
-
-            case "$BUILD_JOB_STATUS" in
-              "success")
-                echo "**Build Status**: ✅ All builds completed successfully" >> $GITHUB_STEP_SUMMARY
-                ;;
-              "failure")
-                echo "**Build Status**: ❌ Some builds failed" >> $GITHUB_STEP_SUMMARY
-                ;;
-              "cancelled")
-                echo "**Build Status**: 🚫 Builds were cancelled" >> $GITHUB_STEP_SUMMARY
-                ;;
-              "skipped")
-                echo "**Build Status**: ⏭️ Builds were skipped" >> $GITHUB_STEP_SUMMARY
-                ;;
-              *)
-                echo "**Build Status**: ⏳ Builds are in progress or status unknown" >> $GITHUB_STEP_SUMMARY
-                ;;
-            esac
+          else
+            echo "No versions needed to be built. All requested versions either:" >> $GITHUB_STEP_SUMMARY
+            echo "- Already exist in the registry" >> $GITHUB_STEP_SUMMARY
+            echo "- Have no upstream images available" >> $GITHUB_STEP_SUMMARY
+            echo "- Are not in a supported Zabbix major.minor series" >> $GITHUB_STEP_SUMMARY
           fi
+
+          # Show build status
+          echo "## Build Status" >> $GITHUB_STEP_SUMMARY
+          BUILD_JOB_STATUS="${{ needs.build-images.result }}"
+
+          case "$BUILD_JOB_STATUS" in
+            "success")
+              echo "**Build Status**: ✅ All builds completed successfully" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "failure")
+              echo "**Build Status**: ❌ Some builds failed" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "cancelled")
+              echo "**Build Status**: 🚫 Builds were cancelled" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "skipped")
+              echo "**Build Status**: ⏭️ Builds were skipped (no versions to build)" >> $GITHUB_STEP_SUMMARY
+              ;;
+            *)
+              echo "**Build Status**: ⏳ Builds are in progress or status unknown" >> $GITHUB_STEP_SUMMARY
+              ;;
+          esac

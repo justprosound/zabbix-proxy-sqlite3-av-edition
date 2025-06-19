@@ -1,4 +1,4 @@
-name: -- reusable -- Docker Hub Tag Discovery
+name: ◆ reusable | Docker Hub Tag Discovery
 
 on:
   workflow_call:
