@@ -195,6 +195,40 @@ jobs:
           echo "| Local Version | $LOCAL_VERSION |" >> $GITHUB_STEP_SUMMARY
           echo "| Local Changes | $IS_LOCAL_CHANGE |" >> $GITHUB_STEP_SUMMARY
 
+      # Determine if this is the highest version in its major.minor series
+      - name: Version tag management
+        id: version_tag_management
+        run: |
+          ZABBIX_VERSION="${{ inputs.zabbix_version }}"
+          MAJOR_MINOR="${{ inputs.major_minor }}"
+          LATEST_VERSION="${{ inputs.latest_version }}"
+
+          echo "Current version: $ZABBIX_VERSION"
+          echo "Major.minor series: $MAJOR_MINOR"
+          echo "Latest version (highest overall): $LATEST_VERSION"
+
+          # Check if this is the highest version overall - only this one gets the 'latest' tag
+          if [ "$ZABBIX_VERSION" == "$LATEST_VERSION" ]; then
+            echo "✅ This is the highest version overall ($ZABBIX_VERSION) - will apply 'latest' tag"
+            echo "should_tag_latest=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Not the highest version overall (which is $LATEST_VERSION) - will NOT apply 'latest' tag"
+            echo "should_tag_latest=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Add information to step summary
+          echo "## 🏷️ Version Tag Management" >> $GITHUB_STEP_SUMMARY
+          echo "| Version Type | Value | Tag Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| ------------ | ----- | ---------- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Current Version | $ZABBIX_VERSION | Will tag as \`$ZABBIX_VERSION\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Major.Minor | $MAJOR_MINOR | Will tag as \`$MAJOR_MINOR\` |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$ZABBIX_VERSION" == "$LATEST_VERSION" ]; then
+            echo "| Latest | $LATEST_VERSION | ✅ Will tag as \`latest\` |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Latest | $LATEST_VERSION | ❌ Will NOT tag as \`latest\` (reserved for $LATEST_VERSION) |" >> $GITHUB_STEP_SUMMARY
+          fi
+
       # Security: Generate SBOM during build with max-level provenance
       - name: Build and push images
         id: build_push
@@ -217,10 +251,10 @@ jobs:
             VCS_REF=${{ github.sha }}
           # Tags based on version information and status
           # - Local version (which may include .N suffix for local changes)
-          # - Major.minor version
+          # - Major.minor version (only for highest patch version in each series)
           # - Original Zabbix version (if not a local change)
           # - LTS tag if applicable
-          # - Latest tag if applicable
+          # - Latest tag if applicable (only for the absolute highest version)
           tags: |
             ${{
               format(
@@ -260,7 +294,7 @@ jobs:
               ) || ''
             }}
             ${{
-              inputs.zabbix_version == inputs.latest_version &&
+              steps.version_tag_management.outputs.should_tag_latest == 'true' &&
               format(
                 '{0}/{1}/{2}:latest',
                 steps.repo_analysis.outputs.registry,
@@ -528,7 +562,7 @@ jobs:
           - \`${MAJOR_MINOR}\` - Latest patch for this major.minor
           $(if [ "$IS_LOCAL_CHANGE" = "false" ]; then echo "- \`${BASE_VERSION}\` - Upstream Zabbix version"; fi)
           $(if [ "$IS_LATEST" = "true" ]; then echo "- \`lts\` - Long-Term Support version (most stable)"; fi)
-          $(if [ "$BASE_VERSION" = "${{ inputs.latest_version }}" ]; then echo "- \`latest\` - Latest version with highest version number"; fi)
+          $(if [ "${{ steps.version_tag_management.outputs.should_tag_latest }}" = "true" ]; then echo "- \`latest\` - Latest version with highest version number"; fi)
           EOF
 
       - name: Extract SBOM from ${{ steps.local_version.outputs.local_version }} built image
@@ -666,7 +700,7 @@ jobs:
           body_path: release_notes.md
           draft: false
           prerelease: false
-          make_latest: ${{ inputs.is_latest == 'true' }}
+          make_latest: ${{ steps.version_tag_management.outputs.should_tag_latest == 'true' }}
           files: ${{ steps.prepare_assets.outputs.assets }}
           fail_on_unmatched_files: false
         env:
