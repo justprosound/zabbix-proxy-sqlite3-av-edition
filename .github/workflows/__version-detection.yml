@@ -108,16 +108,58 @@ jobs:
           # Get the latest version (highest version number)
           LATEST_VERSION=$(echo "$SUPPORTED_VERSIONS" | sort -V | tail -n1)
 
-          # Create matrix with both LTS (current LTS release) and Latest (highest version number) flags
-          MATRIX_JSON=$(echo "$SUPPORTED_VERSIONS" | tr ' ' '\n' | grep -v '^$' | jq --arg lts "$LTS_VERSION" --arg latest "$LATEST_VERSION" -Rs '
+          # Create matrix with LTS, Latest, and highest version per major.minor flags
+          # Group versions by major.minor and find highest patch version in each group
+          echo "Finding highest patch version for each major.minor series..."
+          declare -A HIGHEST_PATCH
+          for VERSION in $SUPPORTED_VERSIONS; do
+            [[ -z "$VERSION" ]] && continue
+            MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
+            CURRENT_HIGHEST="${HIGHEST_PATCH[$MAJOR_MINOR]}"
+
+            # If no version is set for this major.minor or the current version is higher
+            if [[ -z "$CURRENT_HIGHEST" || $(echo -e "$VERSION\n$CURRENT_HIGHEST" | sort -V | tail -n1) == "$VERSION" ]]; then
+              HIGHEST_PATCH[$MAJOR_MINOR]="$VERSION"
+              echo "Setting $VERSION as highest for $MAJOR_MINOR series"
+            fi
+          done
+
+          # Display the highest patch versions we found
+          echo "Highest patch versions for each major.minor series:"
+          for MAJOR_MINOR in "${!HIGHEST_PATCH[@]}"; do
+            echo "  $MAJOR_MINOR => ${HIGHEST_PATCH[$MAJOR_MINOR]}"
+          done
+
+          # Create the matrix JSON with proper version tagging logic
+          MATRIX_JSON=$(echo "$SUPPORTED_VERSIONS" | tr ' ' '\n' | grep -v '^$' | jq \
+            --arg lts "$LTS_VERSION" \
+            --arg latest "$LATEST_VERSION" \
+            --slurpfile highest_patches <(for MM in "${!HIGHEST_PATCH[@]}"; do echo -e "$MM ${HIGHEST_PATCH[$MM]}"; done) \
+            -Rs '
+            # First, create a map of major.minor to highest patch version
+            def highest_patch_map:
+              $highest_patches[]
+              | split(" ")
+              | {(.[0]): .[1]}
+              | to_entries
+              | map({key: .key, value: .value})
+              | from_entries;
+
+            # Parse input versions and create matrix
             split("\n")
             | map(select(length > 0))
-            | map({
-                "zabbix_version": .,
-                "major_minor": (split(".") | .[0:2] | join(".") | tostring),
-                "is_lts": (if . == $lts then "true" else "false" end),
-                "is_latest": (if . == $latest then "true" else "false" end)
-              })
+            | map(
+              # Extract version components
+              . as $version |
+              (split(".") | .[0:2] | join(".")) as $major_minor |
+              # Create matrix entry
+              {
+                "zabbix_version": $version,
+                "major_minor": $major_minor,
+                "is_lts": (if $version == $lts then "true" else "false" end),
+                "is_latest": (if $version == $latest then "true" else "false" end)
+              }
+            )
             | {"include": .}
           ' | tr -d '\n')
 

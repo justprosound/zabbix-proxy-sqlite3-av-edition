@@ -1,7 +1,7 @@
 # 🔍 Zabbix Proxy SQLite3 for AV System Monitoring
 
-[![Build & Push](https://github.com/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition/actions/workflows/ci-release.yml/badge.svg)](https://github.com/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition/actions/workflows/ci-release.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition)](https://github.com/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition/releases)
+[![Build & Push](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/ci-release.yml/badge.svg)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/ci-release.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/justprosound/zabbix-proxy-sqlite3-av-edition)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
 
 ## 📋 Overview
@@ -19,7 +19,7 @@ A specialized Zabbix Proxy container built on SQLite3, enhanced and optimized fo
 
 ### 🏗️ Based On
 
-- **Base Image**: [Official Zabbix Proxy SQLite3](https://hub.docker.com/r/zabbix/zabbix-proxy-sqlite3-av-edition-av-edition)
+- **Base Image**: [Official Zabbix Proxy SQLite3](https://hub.docker.com/r/zabbix/zabbix-proxy-sqlite3)
 - **Original Work**: [Zabbix Community](https://github.com/zabbix)
 - **Enhanced By**: [Hyperscale AV](https://github.com/HyperscaleAV)
 
@@ -42,7 +42,7 @@ docker run -d \
   -e ZBX_PROXYMEMORYBUFFERAGE=1800 \
   -e ZBX_PROXYMEMORYBUFFERSIZE=256M \
   -e ZBX_ENABLEREMOTECOMMANDS=1 \
-  ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition-av-edition-av-edition-av-edition:latest
+  ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:latest
 ```
 
 ### Docker Compose
@@ -51,7 +51,7 @@ docker run -d \
 ---
 services:
   zabbix-proxy:
-    image: ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition-av-edition-av-edition-av-edition:latest
+    image: ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:latest
     container_name: zabbix-proxy-av
     restart: unless-stopped
     ports:
@@ -102,13 +102,13 @@ Historical versions (7.0.0+) can be built on demand using the "Build Historical 
 #### GitHub Container Registry (Recommended)
 ```bash
 # Pull the latest version (highest version number)
-docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition-av-edition-av-edition:latest
+docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:latest
 
 # Pull the LTS version (most stable)
-docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition-av-edition-av-edition:lts
+docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:lts
 
 # Pull a specific version
-docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition-av-edition-av-edition:7.0.13
+docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:7.0.13
 ```
 
 > **Note**: Replace `GITHUB_USERNAME` with your GitHub username/organization when using a fork of this repository. The image name will be automatically adjusted based on your repository name.

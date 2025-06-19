@@ -108,7 +108,8 @@ jobs:
             sed -i "s|ghcr\.io/GITHUB_USERNAME/|ghcr\.io/$REPO_OWNER/|g" "$file"
             sed -i "s|ghcr\.io/GITHUB_USERNAME|ghcr\.io/$REPO_OWNER|g" "$file"
 
-            # Handle specific Docker image repository references
+            # Handle specific Docker image repository references - prevent duplication of -av-edition
+            sed -i "s|ghcr\.io/[^/]*/zabbix-proxy-sqlite3-av-edition[^:]*|ghcr\.io/$REPO_OWNER/$REPO_NAME|g" "$file"
             sed -i "s|ghcr\.io/[^/]*/zabbix-proxy-sqlite3|ghcr\.io/$REPO_OWNER/$REPO_NAME|g" "$file"
 
             # Handle repository-owner placeholders with angle brackets
@@ -118,6 +119,26 @@ jobs:
             # Handle image name placeholders - using the full repository name for consistency
             if [[ -n "$REPO_NAME" ]]; then
               sed -i "s|<derived-image-name>|$REPO_NAME|g" "$file"
+            fi
+
+            # Special handling for Docker image references in code blocks
+            if grep -q "ghcr\.io/" "$file"; then
+              echo "Fixing Docker image references in code blocks..."
+              # These patterns will specifically target the duplicated -av-edition strings in docker commands
+              sed -i "s|docker pull ghcr\.io/[^/:]*/zabbix-proxy-sqlite3-av-edition[^:]*:|docker pull ghcr\.io/$REPO_OWNER/$REPO_NAME:|g" "$file"
+              sed -i "s|ghcr\.io/[^/:]*/zabbix-proxy-sqlite3-av-edition-av-edition[^:]*:|ghcr\.io/$REPO_OWNER/$REPO_NAME:|g" "$file"
+              sed -i "s|ghcr\.io/[^/:]*/zabbix-proxy-sqlite3-av-edition[^:]*:|ghcr\.io/$REPO_OWNER/$REPO_NAME:|g" "$file"
+
+              # Handle docker-compose image references
+              sed -i "s|image: ghcr\.io/[^/:]*/zabbix-proxy-sqlite3-av-edition[^:]*:|image: ghcr\.io/$REPO_OWNER/$REPO_NAME:|g" "$file"
+
+              # More thorough fix to clean all duplicated suffixes by using a loop approach
+              # First, ensure we have at least one suffix
+              sed -i "s|ghcr\.io/[^/:]*/zabbix-proxy-sqlite3|ghcr.io/$REPO_OWNER/$REPO_NAME|g" "$file"
+              # Then remove any duplicated suffixes with a more comprehensive approach
+              while grep -q "av-edition-av-edition" "$file"; do
+                sed -i "s|-av-edition-av-edition|-av-edition|g" "$file"
+              done
             fi
 
             # Handle footer links and other specific sections in README.md
@@ -163,6 +184,16 @@ jobs:
           echo "- Updated $MODIFIED_COUNT markdown files with repository references" >> $GITHUB_STEP_SUMMARY
           echo "- Repository Owner: \`$REPO_OWNER\`" >> $GITHUB_STEP_SUMMARY
           echo "- Repository Name: \`$REPO_NAME\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Fixed image references: \`ghcr.io/$REPO_OWNER/$REPO_NAME\`" >> $GITHUB_STEP_SUMMARY
+
+          # Report duplicated suffixes that were fixed
+          DUPLICATIONS=$(grep -r "av-edition-av-edition" --include="*.md" . | wc -l)
+          if [ "$DUPLICATIONS" -gt 0 ]; then
+            echo "⚠️ Warning: $DUPLICATIONS remaining duplicated repository name suffixes found" >> $GITHUB_STEP_SUMMARY
+            echo "Run the workflow again if needed to fix all instances" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No duplicated repository name suffixes found" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Commit changes back to repository
         id: commit_changes
@@ -193,10 +224,39 @@ jobs:
             fi
           done
 
+          # Validation step to check for Docker image references
+          echo "Validating Docker image references..."
+          INCORRECT_REFS=$(grep -r "av-edition-av-edition" --include="*.md" . | wc -l)
+          if [ "$INCORRECT_REFS" -gt 0 ]; then
+            echo "⚠️ Warning: $INCORRECT_REFS Docker image references with duplicated suffixes found"
+            echo "Applying additional fixes..."
+
+            # One more thorough pass to fix any remaining issues
+            for file in $MARKDOWN_FILES; do
+              if grep -q "ghcr\.io/" "$file"; then
+                # First ensure correct base format
+                sed -i "s|ghcr\.io/[^/:]*/zabbix-proxy-sqlite3|ghcr\.io/$REPO_OWNER/$REPO_NAME|g" "$file"
+                # Then remove duplicates in a loop until none remain
+                while grep -q "av-edition-av-edition" "$file"; do
+                  sed -i "s|-av-edition-av-edition|-av-edition|g" "$file"
+                done
+                git add "$file"
+              fi
+            done
+          fi
+
           # Commit if any files changed
           if [ "$CHANGES_DETECTED" = true ]; then
             echo "Committing changes to documentation files..."
-            git commit -m "Update documentation with latest version information and repository references"
+
+            # Check specifically for Docker image reference fixes
+            if git diff --staged | grep -q "ghcr\.io"; then
+              echo "Fixed Docker image references in documentation"
+              git commit -m "Update documentation with latest version information and fixed Docker image references"
+            else
+              git commit -m "Update documentation with latest version information and repository references"
+            fi
+
             git push
             echo "Changes committed and pushed."
           else
