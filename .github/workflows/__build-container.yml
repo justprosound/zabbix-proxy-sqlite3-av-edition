@@ -195,7 +195,7 @@ jobs:
           echo "| Local Version | $LOCAL_VERSION |" >> $GITHUB_STEP_SUMMARY
           echo "| Local Changes | $IS_LOCAL_CHANGE |" >> $GITHUB_STEP_SUMMARY
 
-      # Determine if this is the highest version in its major.minor series
+      # Determine tagging strategy for this version
       - name: Version tag management
         id: version_tag_management
         run: |
@@ -207,14 +207,19 @@ jobs:
           echo "Major.minor series: $MAJOR_MINOR"
           echo "Latest version (highest overall): $LATEST_VERSION"
 
+          # Default values
+          SHOULD_TAG_LATEST="false"
+
           # Check if this is the highest version overall - only this one gets the 'latest' tag
           if [ "$ZABBIX_VERSION" == "$LATEST_VERSION" ]; then
             echo "✅ This is the highest version overall ($ZABBIX_VERSION) - will apply 'latest' tag"
-            echo "should_tag_latest=true" >> $GITHUB_OUTPUT
+            SHOULD_TAG_LATEST="true"
           else
             echo "❌ Not the highest version overall (which is $LATEST_VERSION) - will NOT apply 'latest' tag"
-            echo "should_tag_latest=false" >> $GITHUB_OUTPUT
           fi
+
+          # Set output values for use in later steps
+          echo "should_tag_latest=$SHOULD_TAG_LATEST" >> $GITHUB_OUTPUT
 
           # Add information to step summary
           echo "## 🏷️ Version Tag Management" >> $GITHUB_STEP_SUMMARY
@@ -223,7 +228,7 @@ jobs:
           echo "| Current Version | $ZABBIX_VERSION | Will tag as \`$ZABBIX_VERSION\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Major.Minor | $MAJOR_MINOR | Will tag as \`$MAJOR_MINOR\` |" >> $GITHUB_STEP_SUMMARY
 
-          if [ "$ZABBIX_VERSION" == "$LATEST_VERSION" ]; then
+          if [ "$SHOULD_TAG_LATEST" == "true" ]; then
             echo "| Latest | $LATEST_VERSION | ✅ Will tag as \`latest\` |" >> $GITHUB_STEP_SUMMARY
           else
             echo "| Latest | $LATEST_VERSION | ❌ Will NOT tag as \`latest\` (reserved for $LATEST_VERSION) |" >> $GITHUB_STEP_SUMMARY
