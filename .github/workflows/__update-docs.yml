@@ -126,9 +126,18 @@ jobs:
               echo "Updating repository references in README.md..."
 
               # Update the footer links with the current repository
-              sed -i -E 's@\[🌟 Star this repo\]\(https://github\.com/[^/]+/[^)]+\)@[🌟 Star this repo](https://github.com/'$REPO_OWNER'/'$REPO_NAME')@g' "$file"
-              sed -i -E 's@\[🐛 Report Bug\]\(https://github\.com/[^/]+/[^/]+/issues\)@[🐛 Report Bug](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/issues)@g' "$file"
-              sed -i -E 's@\[💡 Request Feature\]\(https://github\.com/[^/]+/[^/]+/issues\)@[💡 Request Feature](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/issues)@g' "$file"
+              # Use simpler, more robust patterns for matching URLs
+              sed -i -E 's@\[🌟 Star this repo\]\(https://github\.com/[^/]+/[^)]+@[🌟 Star this repo](https://github.com/'$REPO_OWNER'/'$REPO_NAME'@g' "$file"
+              sed -i -E 's@\[🐛 Report Bug\]\(https://github\.com/[^/]+/[^/]+/issues@[🐛 Report Bug](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/issues@g' "$file"
+              sed -i -E 's@\[💡 Request Feature\]\(https://github\.com/[^/]+/[^/]+/issues@[💡 Request Feature](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/issues@g' "$file"
+
+              # Update Documentation & Support section links
+              sed -i -E 's@\[Issue Tracker\]\(https://github\.com/[^/]+/[^/]+/issues@[Issue Tracker](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/issues@g' "$file"
+              sed -i -E 's@\[Discussions\]\(https://github\.com/[^/]+/[^/]+/discussions@[Discussions](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/discussions@g' "$file"
+
+              # Update badge links
+              sed -i -E 's@\(https://github\.com/[^/]+/'$REPO_NAME'/actions@(https://github.com/'$REPO_OWNER'/'$REPO_NAME'/actions@g' "$file"
+              sed -i -E 's@\(https://img\.shields\.io/github/v/release/[^/]+/'$REPO_NAME'@(https://img.shields.io/github/v/release/'$REPO_OWNER'/'$REPO_NAME'@g' "$file"
 
               # Update Documentation & Support section links
               sed -i -E 's@\[Issue Tracker\]\(https://github\.com/[^/]+/[^/]+/issues\)@[Issue Tracker](https://github.com/'$REPO_OWNER'/'$REPO_NAME'/issues)@g' "$file"
