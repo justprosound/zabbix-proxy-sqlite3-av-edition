@@ -50,7 +50,7 @@ jobs:
 
           # Extract supported versions with proper validation
           JQ_FILTER='.versions[] | select(.end_of_full_support == false) |
-            if has("latest_release") and .latest_release != null and .latest_release | has("release") and .latest_release.release != null then
+            if (.latest_release != null) and (.latest_release.release != null) then
               .latest_release.release
             else
               empty
