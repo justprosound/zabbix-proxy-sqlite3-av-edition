@@ -1,7 +1,7 @@
 # 🔍 Zabbix Proxy SQLite3 for AV System Monitoring
 
 [![Build & Push](https://github.com/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition/actions/workflows/ci-release.yml/badge.svg)](https://github.com/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition/actions/workflows/ci-release.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition)](https://github.com/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition)](https://github.com/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
 
 ## 📋 Overview
@@ -204,8 +204,8 @@ docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition:7.0.
 ## 📚 Documentation & Support
 
 - 📖 [Official Zabbix Documentation](https://www.zabbix.com/documentation/)
-- 🐛 [Issue Tracker](https://github.com/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition/issues)
-- 💬 [Discussions](https://github.com/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition/discussions)
+- 🐛 [Issue Tracker](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/issues)
+- 💬 [Discussions](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/discussions)
 - 📧 [Contact](https://hyperscaleav.com/)
 
 ---
@@ -230,6 +230,6 @@ This project is licensed under the **GNU AGPLv3** (Affero General Public License
 
 **Built with ❤️ for the AV monitoring community**
 
-[🌟 Star this repo](https://github.com/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition) • [🐛 Report Bug](https://github.com/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition/issues) • [💡 Request Feature](https://github.com/bandwith/zabbix-proxy-sqlite3-av-edition-av-edition/issues)
+[🌟 Star this repo](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition) • [🐛 Report Bug](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/issues) • [💡 Request Feature](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/issues)
 
 </div>

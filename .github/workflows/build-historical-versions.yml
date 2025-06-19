@@ -22,6 +22,11 @@ on:
         type: boolean
         default: false
 
+# Ensure we don't run concurrent workflows of the same type
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Security: Minimal required permissions
 permissions:
   contents: write
@@ -239,6 +244,11 @@ jobs:
   build-images:
     needs: prepare-build-matrix
     if: ${{ fromJson(needs.prepare-build-matrix.outputs.matrix).include[0] != null }}
+    # Per-version concurrency group to allow parallel builds of different versions
+    # but cancel in-progress builds for the same version
+    concurrency:
+      group: historical-build-${{ matrix.zabbix_version }}-${{ github.ref }}
+      cancel-in-progress: true
     strategy:
       matrix: ${{ fromJson(needs.prepare-build-matrix.outputs.matrix) }}
       fail-fast: false
