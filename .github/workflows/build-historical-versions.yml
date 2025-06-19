@@ -67,6 +67,7 @@ jobs:
       matrix: ${{ steps.generate-matrix.outputs.matrix }}
       versions_to_build: ${{ steps.generate-matrix.outputs.versions_to_build }}
       target_image: ${{ steps.set-image-name.outputs.image_name }}
+      latest_version: ${{ needs.get-supported-versions.outputs.latest_version }}
     steps:
       - name: Set image name
         id: set-image-name
@@ -325,11 +326,26 @@ jobs:
     with:
       zabbix_version: ${{ matrix.zabbix_version }}
       major_minor: ${{ matrix.major_minor }}
-      latest_version: ${{ matrix.zabbix_version }}
+      # Pass the correct latest version from the job outputs
+      # This ensures tagging is done based on the actual highest version across all Zabbix releases
+      latest_version: ${{ needs.prepare-build-matrix.outputs.latest_version }}
 
-  # Step 5: Summary
-  summary:
+  # Step 5: Update documentation
+  update-docs:
     needs: [get-supported-versions, get-dockerhub-tags, prepare-build-matrix, build-images]
+    if: always()
+    uses: ./.github/workflows/__update-docs.yml
+    with:
+      latest_version: ${{ needs.get-supported-versions.outputs.latest_version }}
+      lts_version: ${{ needs.get-supported-versions.outputs.lts_version }}
+      all_versions: ${{ needs.get-supported-versions.outputs.all_versions }}
+      # Only update README versions if build was successful
+      # This ensures only successful builds update the version information
+      build_success: ${{ needs.build-images.result == 'success' }}
+
+  # Step 6: Summary
+  summary:
+    needs: [get-supported-versions, get-dockerhub-tags, prepare-build-matrix, build-images, update-docs]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -420,3 +436,13 @@ jobs:
               echo "**Build Status**: ⏳ Builds are in progress or status unknown" >> $GITHUB_STEP_SUMMARY
               ;;
           esac
+
+          # Add documentation update status
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Documentation Update" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "$BUILD_JOB_STATUS" == "success" ]]; then
+            echo "✅ README version table has been updated" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ README version table was NOT updated (requires successful build)" >> $GITHUB_STEP_SUMMARY
+          fi
