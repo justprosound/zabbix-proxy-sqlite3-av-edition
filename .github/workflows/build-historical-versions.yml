@@ -105,6 +105,11 @@ jobs:
 
           echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
 
+      - name: Install parallel and jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y parallel jq
+
       - name: Filter and process versions
         id: generate-matrix
         run: |
@@ -121,100 +126,165 @@ jobs:
           fi
 
           # Get supported series (major.minor) from Zabbix API
-          SUPPORTED_SERIES=$(echo "${{ needs.get-supported-versions.outputs.all_versions }}" | tr ',' '\n' | \
-            awk -F. '{print $1"."$2}' | sort -u | tr '\n' '|' | sed 's/|$//')
+          SUPPORTED_VERSIONS="${{ needs.get-supported-versions.outputs.all_versions }}"
 
-          echo "Supported series: ${SUPPORTED_SERIES}"
+          # Convert comma-separated values to JSON arrays for easier processing
+          ALL_VERSIONS_JSON=$(echo "$ALL_VERSIONS" | tr ',' '\n' | jq -R . | jq -s .)
+          SUPPORTED_VERSIONS_JSON=$(echo "$SUPPORTED_VERSIONS" | tr ',' '\n' | jq -R . | jq -s .)
 
-          # Filter versions by supported series
-          FILTERED_VERSIONS=$(echo "$ALL_VERSIONS" | tr ',' '\n' | grep -E "^(${SUPPORTED_SERIES})\." | sort -V)
+          # Extract major.minor from supported versions to create a filter
+          SUPPORTED_SERIES_JSON=$(echo "$SUPPORTED_VERSIONS_JSON" | jq '[.[] | split(".")[0:2] | join(".")]' | jq 'unique')
+          echo "Supported series: $(echo "$SUPPORTED_SERIES_JSON" | jq -c .)"
 
-          # Prepare for build matrix
+          # Filter versions to only those in supported series
+          FILTERED_VERSIONS_JSON=$(echo "$ALL_VERSIONS_JSON $SUPPORTED_SERIES_JSON" | \
+            jq -s '
+              .[0] as $all_versions |
+              .[1] as $supported_series |
+              $all_versions |
+              map(select(
+                . as $version |
+                $supported_series |
+                map($version | startswith(.)) |
+                any
+              )) |
+              sort_by(
+                . | split(".") |
+                map(tonumber)
+              )
+            ')
+
+          # Get image name for checking
           IMAGE_NAME="${{ steps.set-image-name.outputs.image_name }}"
-          VERSIONS_TO_BUILD=()
-          BUILD_MATRIX_ITEMS=()
+          UPSTREAM_REPO="${{ env.UPSTREAM_REPO }}"
+          FORCE_REBUILD="${{ inputs.force_rebuild }}"
+          BUILD_ALL_PATCHES="${{ inputs.build_all_patches }}"
 
-          # Process each version
-          echo "$FILTERED_VERSIONS" | while read -r VERSION; do
-            # Skip empty lines
-            [ -z "$VERSION" ] && continue
+          # Create temp files for parallel processing
+          TEMP_DIR=$(mktemp -d)
+          VERSIONS_FILE="$TEMP_DIR/versions.json"
+          RESULTS_FILE="$TEMP_DIR/results.json"
 
-            MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
-            IMAGE_TAG="ubuntu-$VERSION"
-            FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
-            UPSTREAM_IMAGE="${{ env.UPSTREAM_REPO }}:${IMAGE_TAG}"
+          # Write filtered versions to file for parallel processing
+          echo "$FILTERED_VERSIONS_JSON" > "$VERSIONS_FILE"
 
-            # Check if our image exists
-            if docker manifest inspect "$FULL_IMAGE" &>/dev/null; then
-              IMAGE_EXISTS="true"
-            else
-              IMAGE_EXISTS="false"
-            fi
+          # Create empty results file
+          echo "[]" > "$RESULTS_FILE"
 
-            # Check if upstream image exists
-            if docker manifest inspect "$UPSTREAM_IMAGE" &>/dev/null; then
-              UPSTREAM_EXISTS="true"
-            else
-              UPSTREAM_EXISTS="false"
-              continue  # Skip if upstream doesn't exist
-            fi
+          echo "Checking image existence in parallel batches..."
 
-            # Determine if we should build
-            if [[ "${{ inputs.force_rebuild }}" == "true" ]] || ([[ "$IMAGE_EXISTS" == "false" ]] && [[ "$UPSTREAM_EXISTS" == "true" ]]); then
-              echo "Will build version $VERSION"
+          # Process in parallel with GNU parallel
+          # This will check each version and output JSON results directly
+          cat "$VERSIONS_FILE" | jq -c '.[]' | \
+            parallel --jobs 20 --will-cite bash -c '
+              VERSION="{}"
+              MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
+              IMAGE_TAG="ubuntu-$VERSION"
 
-              if [[ "${{ inputs.build_all_patches }}" == "true" ]]; then
-                # If building all patches, record the major.minor and highest patch
-                # We'll expand these later
-                echo "$VERSION" >> /tmp/versions_to_build.txt
-              else
-                # Just add this specific version to the build list
-                echo "{\"zabbix_version\":\"$VERSION\",\"major_minor\":\"$MAJOR_MINOR\"}" >> /tmp/matrix_items.json
+              # Check if upstream image exists (only make the API call when needed)
+              UPSTREAM_EXISTS=false
+              if docker manifest inspect "$UPSTREAM_REPO:$IMAGE_TAG" &>/dev/null; then
+                UPSTREAM_EXISTS=true
               fi
-            fi
-          done
+
+              # Only check our image if upstream exists and not forcing rebuild
+              IMAGE_EXISTS=false
+              if [[ "$UPSTREAM_EXISTS" == true && "$FORCE_REBUILD" != "true" ]]; then
+                if docker manifest inspect "$IMAGE_NAME:$IMAGE_TAG" &>/dev/null; then
+                  IMAGE_EXISTS=true
+                fi
+              fi
+
+              # Determine if we should build
+              SHOULD_BUILD=false
+              if [[ "$FORCE_REBUILD" == "true" || ( "$UPSTREAM_EXISTS" == true && "$IMAGE_EXISTS" == false ) ]]; then
+                SHOULD_BUILD=true
+              fi
+
+              # Output result as JSON
+              jq -n --arg version "$VERSION" \
+                  --arg major_minor "$MAJOR_MINOR" \
+                  --argjson upstream_exists "$UPSTREAM_EXISTS" \
+                  --argjson image_exists "$IMAGE_EXISTS" \
+                  --argjson should_build "$SHOULD_BUILD" \
+                  "{
+                    \"zabbix_version\": \$version,
+                    \"major_minor\": \$major_minor,
+                    \"upstream_exists\": \$upstream_exists,
+                    \"image_exists\": \$image_exists,
+                    \"should_build\": \$should_build
+                  }"
+            ' > "$TEMP_DIR/all_results.json"
+
+          # Combine and filter results
+          FILTERED_RESULTS=$(cat "$TEMP_DIR/all_results.json" | jq -s '[.[] | select(.should_build == true)]')
 
           # Handle build_all_patches mode
-          if [[ "${{ inputs.build_all_patches }}" == "true" ]] && [ -f /tmp/versions_to_build.txt ]; then
-            # Group by major.minor and find highest patch for each
-            declare -A MAJOR_MINOR_VERSIONS
-            while read -r VERSION; do
-              MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
-              PATCH=$(echo "$VERSION" | cut -d. -f3)
+          if [[ "$BUILD_ALL_PATCHES" == "true" ]]; then
+            echo "Processing all patches mode..."
 
-              # Record highest patch for each major.minor
-              if [[ -z "${MAJOR_MINOR_VERSIONS[$MAJOR_MINOR]}" ]] ||
-                 [[ $PATCH -gt $(echo "${MAJOR_MINOR_VERSIONS[$MAJOR_MINOR]}" | cut -d. -f3) ]]; then
-                MAJOR_MINOR_VERSIONS[$MAJOR_MINOR]="$VERSION"
-              fi
-            done < /tmp/versions_to_build.txt
+            # Create a lookup table of versions to check
+            VERSIONS_TO_CHECK=$(echo "$FILTERED_RESULTS" | jq '[
+              # Group by major_minor
+              group_by(.major_minor) |
+              # For each group
+              .[] |
+              # Find the highest patch version
+              max_by(.zabbix_version | split(".") | .[2] | tonumber) |
+              # Extract the information we need
+              {
+                major_minor: .major_minor,
+                max_version: .zabbix_version,
+                max_patch: (.zabbix_version | split(".") | .[2] | tonumber)
+              }
+            ]')
 
-            # For each major.minor, expand to all patches
-            for MAJOR_MINOR in "${!MAJOR_MINOR_VERSIONS[@]}"; do
-              VERSION="${MAJOR_MINOR_VERSIONS[$MAJOR_MINOR]}"
-              MAX_PATCH=$(echo "$VERSION" | cut -d. -f3)
+            # Process each major.minor series
+            echo "$VERSIONS_TO_CHECK" | jq -c '.[]' | while read -r VERSION_INFO; do
+              MAJOR_MINOR=$(echo "$VERSION_INFO" | jq -r '.major_minor')
+              MAX_PATCH=$(echo "$VERSION_INFO" | jq -r '.max_patch')
 
-              # Generate all patches from 0 to MAX_PATCH
+              echo "Processing $MAJOR_MINOR series, patches 0-$MAX_PATCH..."
+
+              # Create all patch versions and check if they should be built
               for ((PATCH=0; PATCH<=MAX_PATCH; PATCH++)); do
                 FULL_VERSION="${MAJOR_MINOR}.${PATCH}"
-
-                # Check if upstream image exists for this patch
                 UPSTREAM_TAG="ubuntu-$FULL_VERSION"
-                if docker manifest inspect "${{ env.UPSTREAM_REPO }}:${UPSTREAM_TAG}" &>/dev/null; then
-                  echo "{\"zabbix_version\":\"$FULL_VERSION\",\"major_minor\":\"$MAJOR_MINOR\"}" >> /tmp/matrix_items.json
+
+                # Check if upstream image exists
+                if docker manifest inspect "$UPSTREAM_REPO:$UPSTREAM_TAG" &>/dev/null; then
+                  # Add to results
+                  echo "{
+                    \"zabbix_version\": \"$FULL_VERSION\",
+                    \"major_minor\": \"$MAJOR_MINOR\",
+                    \"upstream_exists\": true,
+                    \"should_build\": true
+                  }" >> "$TEMP_DIR/patch_results.json"
                 fi
               done
             done
+
+            # Combine normal results with patch results if any
+            if [ -f "$TEMP_DIR/patch_results.json" ]; then
+              COMBINED_RESULTS=$(cat "$TEMP_DIR/patch_results.json" | jq -s . | jq --argjson base "$FILTERED_RESULTS" '
+                $base + . | unique_by(.zabbix_version)
+              ')
+              FILTERED_RESULTS="$COMBINED_RESULTS"
+            fi
           fi
 
-          # Create the final matrix
-          if [ -f /tmp/matrix_items.json ]; then
-            # Combine all items into a JSON array
-            MATRIX_JSON=$(echo '{"include":[' $(cat /tmp/matrix_items.json | tr '\n' ',' | sed 's/,$//') ']}')
+          # Extract the matrix-compatible format and versions CSV
+          MATRIX_JSON=$(echo "$FILTERED_RESULTS" | jq '{
+            include: map({
+              zabbix_version: .zabbix_version,
+              major_minor: .major_minor
+            })
+          }')
 
-            # Get a CSV list of versions for the summary
-            VERSIONS_CSV=$(echo "$MATRIX_JSON" | jq -r '.include[].zabbix_version' | tr '\n' ',' | sed 's/,$//')
+          VERSIONS_CSV=$(echo "$FILTERED_RESULTS" | jq -r '[.[] | .zabbix_version] | join(",")')
 
+          # Output the results
+          if [ "$(echo "$MATRIX_JSON" | jq '.include | length')" -gt 0 ]; then
             echo "Generated build matrix with $(echo "$MATRIX_JSON" | jq '.include | length') versions"
             echo "$MATRIX_JSON" | jq .
 
@@ -226,19 +296,18 @@ jobs:
             echo "versions_to_build=" >> $GITHUB_OUTPUT
           fi
 
+          # Clean up
+          rm -rf "$TEMP_DIR"
+
           # Add to step summary
           echo "## Build Matrix Generation" >> $GITHUB_STEP_SUMMARY
           echo "| Description | Value |" >> $GITHUB_STEP_SUMMARY
           echo "| ----------- | ----- |" >> $GITHUB_STEP_SUMMARY
-          echo "| Docker Hub Tags | $(echo "$ALL_VERSIONS" | tr ',' '\n' | wc -l) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Supported Series | $(echo "$SUPPORTED_SERIES" | tr '|' ',' | sed 's/,/, /g') |" >> $GITHUB_STEP_SUMMARY
-          echo "| Filtered Versions | $(echo "$FILTERED_VERSIONS" | wc -l) |" >> $GITHUB_STEP_SUMMARY
-          if [ -f /tmp/matrix_items.json ]; then
-            echo "| Versions to Build | $(cat /tmp/matrix_items.json | wc -l) |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| Versions to Build | 0 |" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "| Build All Patches | ${{ inputs.build_all_patches }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Hub Tags | $(echo "$ALL_VERSIONS_JSON" | jq 'length') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Supported Series | $(echo "$SUPPORTED_SERIES_JSON" | jq 'join(", ")') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Filtered Versions | $(echo "$FILTERED_VERSIONS_JSON" | jq 'length') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Versions to Build | $(echo "$MATRIX_JSON" | jq '.include | length') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build All Patches | $BUILD_ALL_PATCHES |" >> $GITHUB_STEP_SUMMARY
 
   # Step 4: Build container images
   build-images:
