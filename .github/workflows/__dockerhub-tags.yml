@@ -107,7 +107,7 @@ jobs:
                 echo "Error $http_code from Docker Hub API:"
                 cat "/tmp/response_body.json"
 
-                if [[ $retry -ge $MAX_RETRIES - 1 ]]; then
+                if [[ $retry -ge $((MAX_RETRIES - 1)) ]]; then
                   echo "Max retries reached. Failing."
                   return 1
                 fi
