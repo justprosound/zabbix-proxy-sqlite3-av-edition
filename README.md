@@ -42,7 +42,7 @@ docker run -d \
   -e ZBX_PROXYMEMORYBUFFERAGE=1800 \
   -e ZBX_PROXYMEMORYBUFFERSIZE=256M \
   -e ZBX_ENABLEREMOTECOMMANDS=1 \
-  ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:latest
+  ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition-av-edition-av-edition-av-edition-av-edition:latest
 ```
 
 ### Docker Compose
@@ -51,7 +51,7 @@ docker run -d \
 ---
 services:
   zabbix-proxy:
-    image: ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:latest
+    image: ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition-av-edition-av-edition-av-edition-av-edition:latest
     container_name: zabbix-proxy-av
     restart: unless-stopped
     ports:
@@ -102,13 +102,13 @@ Historical versions (7.0.0+) can be built on demand using the "Build Historical 
 #### GitHub Container Registry (Recommended)
 ```bash
 # Pull the latest version (highest version number)
-docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:latest
+docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition-av-edition-av-edition-av-edition:latest
 
 # Pull the LTS version (most stable)
-docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:lts
+docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition-av-edition-av-edition-av-edition:lts
 
 # Pull a specific version
-docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:7.0.13
+docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition-av-edition-av-edition-av-edition-av-edition:7.0.13
 ```
 
 > **Note**: Replace `GITHUB_USERNAME` with your GitHub username/organization when using a fork of this repository. The image name will be automatically adjusted based on your repository name.
