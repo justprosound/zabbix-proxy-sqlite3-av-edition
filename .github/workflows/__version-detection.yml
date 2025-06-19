@@ -46,7 +46,7 @@ jobs:
             echo "::error::Invalid JSON received from Zabbix API"
             cat .github/zabbix-versions.json | head -n 50
             exit 1
-          }
+          fi
 
           # Extract supported versions with proper validation
           JQ_FILTER='.versions[] | select(.end_of_full_support == false) |
