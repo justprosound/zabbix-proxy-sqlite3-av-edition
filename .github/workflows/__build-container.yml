@@ -266,7 +266,7 @@ jobs:
                 '{0}/{1}/{2}:{3}',
                 steps.repo_analysis.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name || env.IMAGE_NAME,
+                steps.repo_analysis.outputs.image_name,
                 steps.local_version.outputs.local_version
               )
             }}
@@ -275,7 +275,7 @@ jobs:
                 '{0}/{1}/{2}:{3}',
                 steps.repo_analysis.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name || env.IMAGE_NAME,
+                steps.repo_analysis.outputs.image_name,
                 inputs.major_minor
               )
             }}
@@ -285,7 +285,7 @@ jobs:
                 '{0}/{1}/{2}:{3}',
                 steps.repo_analysis.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name || env.IMAGE_NAME,
+                steps.repo_analysis.outputs.image_name,
                 inputs.zabbix_version
               ) || ''
             }}
@@ -295,7 +295,7 @@ jobs:
                 '{0}/{1}/{2}:lts',
                 steps.repo_analysis.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name || env.IMAGE_NAME
+                steps.repo_analysis.outputs.image_name
               ) || ''
             }}
             ${{
@@ -304,7 +304,7 @@ jobs:
                 '{0}/{1}/{2}:latest',
                 steps.repo_analysis.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name || env.IMAGE_NAME
+                steps.repo_analysis.outputs.image_name
               ) || ''
             }}
           # Image metadata labels
@@ -351,7 +351,7 @@ jobs:
             # Prepare image path for use in reporting
             REGISTRY="${{ steps.repo_analysis.outputs.registry }}"
             OWNER="${{ github.repository_owner }}"
-            IMG_NAME="${{ steps.repo_analysis.outputs.image_name || env.IMAGE_NAME }}"
+            IMG_NAME="${{ steps.repo_analysis.outputs.image_name }}"
             VERSION="${{ steps.local_version.outputs.local_version }}"
             IMAGE_TAG="$REGISTRY/$OWNER/$IMG_NAME:$VERSION"
             echo "| 🏷️ Image Tag | $IMAGE_TAG |" >> $GITHUB_STEP_SUMMARY
@@ -365,12 +365,8 @@ jobs:
         if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
         continue-on-error: true
         with:
-          # Defining the full image path with multiline format
-          image-ref: >-
-            ${{ steps.repo_analysis.outputs.registry }}/
-            ${{ github.repository_owner }}/
-            ${{ steps.repo_analysis.outputs.image_name || env.IMAGE_NAME }}:
-            ${{ steps.local_version.outputs.local_version }}
+          # Defining the full image path
+          image-ref: ${{ steps.repo_analysis.outputs.registry }}/${{ github.repository_owner }}/${{ steps.repo_analysis.outputs.image_name }}:${{ steps.local_version.outputs.local_version }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -389,12 +385,8 @@ jobs:
         if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
         continue-on-error: true
         with:
-          # Defining the full image path with multiline format
-          image-ref: >-
-            ${{ steps.repo_analysis.outputs.registry }}/
-            ${{ github.repository_owner }}/
-            ${{ steps.repo_analysis.outputs.image_name || env.IMAGE_NAME }}:
-            ${{ steps.local_version.outputs.local_version }}
+          # Defining the full image path
+          image-ref: ${{ steps.repo_analysis.outputs.registry }}/${{ github.repository_owner }}/${{ steps.repo_analysis.outputs.image_name }}:${{ steps.local_version.outputs.local_version }}
           format: 'spdx-json'
           output: 'sbom-spdx.json'
 
@@ -432,12 +424,8 @@ jobs:
         if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
         continue-on-error: true
         with:
-          # Defining the full image path with multiline format
-          image: >-
-            ${{ steps.repo_analysis.outputs.registry }}/
-            ${{ github.repository_owner }}/
-            ${{ steps.repo_analysis.outputs.image_name || env.IMAGE_NAME }}:
-            ${{ steps.local_version.outputs.local_version }}
+          # Defining the full image path
+          image: ${{ steps.repo_analysis.outputs.registry }}/${{ github.repository_owner }}/${{ steps.repo_analysis.outputs.image_name }}:${{ steps.local_version.outputs.local_version }}
           artifact-name: sbom-${{ steps.local_version.outputs.local_version }}.spdx.json
           dependency-snapshot: true
 
@@ -449,7 +437,7 @@ jobs:
           # Prepare image reference for attestation verification
           REGISTRY="${{ steps.repo_analysis.outputs.registry }}"
           OWNER="${{ github.repository_owner }}"
-          IMG_NAME="${{ steps.repo_analysis.outputs.image_name || env.IMAGE_NAME }}"
+          IMG_NAME="${{ steps.repo_analysis.outputs.image_name }}"
           VERSION="${{ steps.local_version.outputs.local_version }}"
           IMAGE_REF="$REGISTRY/$OWNER/$IMG_NAME:$VERSION"
 
@@ -549,7 +537,7 @@ jobs:
           ### 📥 Container Images
           ```bash
           # Pull this specific version
-          docker pull ${{ steps.repo_analysis.outputs.registry }}/${{ github.repository_owner }}/${{ steps.repo_analysis.outputs.image_name || env.IMAGE_NAME }}:$LOCAL_VERSION
+          docker pull ${{ steps.repo_analysis.outputs.registry }}/${{ github.repository_owner }}/${{ steps.repo_analysis.outputs.image_name }}:$LOCAL_VERSION
           ```
 
           ### 📋 Container Metadata
@@ -577,7 +565,7 @@ jobs:
           # Set up image reference for extraction
           REGISTRY="${{ steps.repo_analysis.outputs.registry }}"
           OWNER="${{ github.repository_owner }}"
-          IMG_NAME="${{ steps.repo_analysis.outputs.image_name || env.IMAGE_NAME }}"
+          IMG_NAME="${{ steps.repo_analysis.outputs.image_name }}"
           VERSION="${{ steps.local_version.outputs.local_version }}"
           IMAGE_TAG="$REGISTRY/$OWNER/$IMG_NAME:$VERSION"
           CONTAINER_ID=$(docker create $IMAGE_TAG)
@@ -592,7 +580,7 @@ jobs:
           # Set up image reference for metadata validation
           REGISTRY="${{ steps.repo_analysis.outputs.registry }}"
           OWNER="${{ github.repository_owner }}"
-          IMG_NAME="${{ steps.repo_analysis.outputs.image_name || env.IMAGE_NAME }}"
+          IMG_NAME="${{ steps.repo_analysis.outputs.image_name }}"
           VERSION="${{ steps.local_version.outputs.local_version }}"
           IMAGE_TAG="$REGISTRY/$OWNER/$IMG_NAME:$VERSION"
 

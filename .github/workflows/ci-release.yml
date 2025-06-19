@@ -54,14 +54,18 @@ jobs:
   check-changes:
     uses: ./.github/workflows/__check-changes.yml
 
-  # Update documentation
+  # Update documentation - moved to run after build completes
   update-docs:
-    needs: detect-versions
+    needs: [detect-versions, build-containers]
+    # Always run this job, but the workflow itself will check build success
+    if: always()
     uses: ./.github/workflows/__update-docs.yml
     with:
       latest_version: ${{ needs.detect-versions.outputs.latest_version }}
       lts_version: ${{ needs.detect-versions.outputs.lts_version }}
       all_versions: ${{ needs.detect-versions.outputs.all_versions }}
+      # Only update README versions if build was successful
+      build_success: ${{ needs.build-containers.result == 'success' }}
 
   # Build and push containers in matrix
   matrix-setup:
