@@ -612,8 +612,20 @@ jobs:
           # Show change detection result
           echo "## Change Detection" >> $GITHUB_STEP_SUMMARY
           SHOULD_REBUILD="${{ needs.check-changes.outputs.should_rebuild }}"
+          COMMITS_SINCE_RELEASE="${{ needs.check-changes.outputs.commit_since_release }}"
+          LAST_RELEASE="${{ needs.check-changes.outputs.last_release }}"
+
           if [ "$SHOULD_REBUILD" == "true" ]; then
             echo "✅ **Changes detected** - Container rebuilds were needed" >> $GITHUB_STEP_SUMMARY
+
+            # Show more detailed information about why rebuild was needed
+            if [ "$COMMITS_SINCE_RELEASE" == "true" ]; then
+              if [ "$LAST_RELEASE" == "none" ]; then
+                echo "  - No GitHub releases found" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "  - Unreleased commits detected since last release ($LAST_RELEASE)" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
           else
             echo "ℹ️ **No changes detected** - No container rebuilds were needed" >> $GITHUB_STEP_SUMMARY
           fi
