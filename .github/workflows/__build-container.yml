@@ -673,7 +673,8 @@ jobs:
         if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
         run: |
           echo "## OCI Metadata Validation" >> $GITHUB_STEP_SUMMARY
-          # Set up image reference for metadata validation
+
+          # Use outputs from previous steps and environment variables
           REGISTRY="${{ steps.repo_analysis.outputs.registry }}"
           OWNER="${{ github.repository_owner }}"
           IMG_NAME="${{ steps.repo_analysis.outputs.image_name }}"
