@@ -69,9 +69,14 @@ jobs:
       tag_pattern: '^ubuntu-[0-9]+\.[0-9]+\.[0-9]+$'
       min_version: "${{ inputs.min_version }}"
 
-  # Step 3: Process versions and create build matrix
+  # Step 3: Check if we need to rebuild containers
+  check-changes:
+    uses: ./.github/workflows/__check-changes.yml
+
+  # Step 4: Process versions and create build matrix
   prepare-build-matrix:
-    needs: [get-supported-versions, get-dockerhub-tags]
+    needs: [get-supported-versions, get-dockerhub-tags, check-changes]
+    if: ${{ needs.check-changes.outputs.should_rebuild == 'true' || inputs.force_rebuild == true }}
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.generate-matrix.outputs.matrix }}
@@ -561,10 +566,10 @@ jobs:
           echo "| Build All Patches | $BUILD_ALL_PATCHES |" >> $GITHUB_STEP_SUMMARY
           echo "| Cache Used | Yes |" >> $GITHUB_STEP_SUMMARY
 
-  # Step 4: Build container images
+  # Step 5: Build container images
   build-images:
-    needs: prepare-build-matrix
-    if: ${{ fromJson(needs.prepare-build-matrix.outputs.matrix).include[0] != null }}
+    needs: [prepare-build-matrix, check-changes]
+    if: ${{ needs.check-changes.outputs.should_rebuild == 'true' && fromJson(needs.prepare-build-matrix.outputs.matrix).include[0] != null }}
     # Per-version concurrency group to allow parallel builds of different versions
     # but cancel in-progress builds for the same version
     concurrency:
@@ -581,28 +586,46 @@ jobs:
       # This ensures tagging is done based on the actual highest version across all Zabbix releases
       latest_version: ${{ needs.prepare-build-matrix.outputs.latest_version }}
 
-  # Step 5: Update documentation
+  # Step 6: Update documentation
   update-docs:
-    needs: [get-supported-versions, get-dockerhub-tags, prepare-build-matrix, build-images]
+    needs: [get-supported-versions, get-dockerhub-tags, prepare-build-matrix, build-images, check-changes]
     if: always()
     uses: ./.github/workflows/__update-docs.yml
     with:
       latest_version: ${{ needs.get-supported-versions.outputs.latest_version }}
       lts_version: ${{ needs.get-supported-versions.outputs.lts_version }}
       all_versions: ${{ needs.get-supported-versions.outputs.all_versions }}
-      # Only update README versions if build was successful
+      # Only update README versions if build was needed and successful, or if no rebuild was needed
       # This ensures only successful builds update the version information
-      build_success: ${{ needs.build-images.result == 'success' }}
+      build_success: ${{ (needs.check-changes.outputs.should_rebuild == 'true' && needs.build-images.result == 'success') || needs.check-changes.outputs.should_rebuild == 'false' }}
 
-  # Step 6: Summary
+  # Step 7: Summary
   summary:
-    needs: [get-supported-versions, get-dockerhub-tags, prepare-build-matrix, build-images, update-docs]
+    needs: [get-supported-versions, get-dockerhub-tags, prepare-build-matrix, build-images, update-docs, check-changes]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Summarize build results
         run: |
           echo "# Historical Version Build Results" >> $GITHUB_STEP_SUMMARY
+
+          # Show change detection result
+          echo "## Change Detection" >> $GITHUB_STEP_SUMMARY
+          SHOULD_REBUILD="${{ needs.check-changes.outputs.should_rebuild }}"
+          if [ "$SHOULD_REBUILD" == "true" ]; then
+            echo "✅ **Changes detected** - Container rebuilds were needed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "ℹ️ **No changes detected** - No container rebuilds were needed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ inputs.force_rebuild }}" == "true" ]; then
+            echo "⚠️ **Force rebuild** was requested via workflow dispatch" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            echo "🕒 This was a **scheduled run**" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
 
           # Show image name information
           IMAGE_NAME="${{ needs.prepare-build-matrix.outputs.target_image }}"
