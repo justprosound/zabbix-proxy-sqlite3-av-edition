@@ -79,7 +79,7 @@ RUN apt-get update && \
     # Apply security updates
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-    gnupg ca-certificates apt-transport-https curl dirmngr nodejs npm && \
+    gnupg ca-certificates apt-transport-https curl dirmngr && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
