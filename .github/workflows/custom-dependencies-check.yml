@@ -243,6 +243,52 @@ jobs:
 
           echo "::notice::kubectl 'stable' tag currently points to version $LATEST_VERSION"
 
+  check-dockerfile-vulnerabilities:
+    name: Check Dockerfile Security Vulnerabilities
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    outputs:
+      has_vulnerabilities: ${{ steps.check_vuln.outputs.has_vulnerabilities }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Anchore scan-action on Dockerfile
+        id: scan_dockerfile
+        uses: anchore/scan-action@v6
+        with:
+          path: "."
+          fail-build: false
+          severity-cutoff: high
+          output-format: sarif
+
+      - name: Upload scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: success()
+        with:
+          sarif_file: ${{ steps.scan_dockerfile.outputs.sarif }}
+          category: "dockerfile-vulnerabilities"
+
+      - name: Determine if vulnerabilities were found
+        id: check_vuln
+        if: success()
+        run: |
+          if [[ -f "${{ steps.scan_dockerfile.outputs.sarif }}" ]]; then
+            VULN_COUNT=$(jq -r '.runs[].results | length' ${{ steps.scan_dockerfile.outputs.sarif }} || echo "0")
+            if [[ "$VULN_COUNT" -gt 0 ]]; then
+              echo "has_vulnerabilities=true" >> $GITHUB_OUTPUT
+              echo "::warning::Found $VULN_COUNT potential security vulnerabilities in Dockerfile"
+            else
+              echo "has_vulnerabilities=false" >> $GITHUB_OUTPUT
+              echo "No vulnerabilities found in Dockerfile"
+            fi
+          else
+            echo "has_vulnerabilities=false" >> $GITHUB_OUTPUT
+            echo "No scan results file found"
+          fi
+
   create-dependencies-report:
     name: Create Dependencies Report
     needs:
@@ -250,6 +296,7 @@ jobs:
       - check-speedtest-cli
       - check-cloudflarepycli
       - check-kubectl
+      - check-dockerfile-vulnerabilities
     if: |
       needs.check-zabbix-version.outputs.has_update == 'true' ||
       needs.check-speedtest-cli.outputs.has_update == 'true' ||

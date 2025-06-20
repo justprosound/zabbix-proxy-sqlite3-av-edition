@@ -234,6 +234,47 @@ jobs:
             echo "| Latest | $LATEST_VERSION | ❌ Will NOT tag as \`latest\` (reserved for $LATEST_VERSION) |" >> $GITHUB_STEP_SUMMARY
           fi
 
+      # Security: Scan Dockerfile for vulnerabilities before building
+      - name: Run Anchore scan-action on Dockerfile
+        id: dockerfile_scan
+        uses: anchore/scan-action@v6
+        if: success() && steps.check_upstream_image.outputs.upstream_exists != 'false'
+        continue-on-error: true
+        with:
+          path: "."
+          fail-build: false
+          severity-cutoff: high
+          output-format: sarif
+
+      # Upload Dockerfile scan results to GitHub Security tab
+      - name: Upload Dockerfile scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: success() && steps.dockerfile_scan.outcome == 'success' && steps.dockerfile_scan.conclusion == 'success'
+        with:
+          sarif_file: ${{ steps.dockerfile_scan.outputs.sarif }}
+          category: "dockerfile-vulnerabilities"
+
+      # Generate vulnerability summary for Dockerfile
+      - name: Generate Dockerfile vulnerability summary
+        if: success() && steps.dockerfile_scan.outcome == 'success' && steps.dockerfile_scan.conclusion == 'success'
+        run: |
+          echo "## Dockerfile Vulnerability Scan Results" >> $GITHUB_STEP_SUMMARY
+
+          if [[ -f "${{ steps.dockerfile_scan.outputs.sarif }}" ]]; then
+            VULN_COUNT=$(jq -r '.runs[].results | length' ${{ steps.dockerfile_scan.outputs.sarif }} || echo "0")
+            echo "| Category | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "| -------- | ----- |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Vulnerabilities | $VULN_COUNT |" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$VULN_COUNT" -gt 0 ]; then
+              echo "::warning::Found $VULN_COUNT potential security vulnerabilities in Dockerfile"
+            else
+              echo "✅ No vulnerabilities found in Dockerfile" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "No vulnerability data available" >> $GITHUB_STEP_SUMMARY
+          fi
+
       # Security: Generate SBOM during build with max-level provenance
       - name: Build and push images
         id: build_push
@@ -377,6 +418,57 @@ jobs:
         if: success() && steps.trivy_scan.outcome == 'success' && steps.trivy_scan.conclusion == 'success'
         with:
           sarif_file: 'trivy-results.sarif'
+
+      # Security: Scan container for vulnerabilities using Anchore scan-action
+      - name: Run Anchore vulnerability scanner for ${{ steps.local_version.outputs.local_version }}
+        uses: anchore/scan-action@v6
+        id: anchore_scan
+        if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
+        continue-on-error: true
+        with:
+          image: ${{ steps.repo_analysis.outputs.registry }}/${{ github.repository_owner }}/${{ steps.repo_analysis.outputs.image_name }}:${{ steps.local_version.outputs.local_version }}
+          fail-build: false
+          severity-cutoff: high
+          output-format: sarif
+          add-cpes-if-none: true
+
+      # Security: Upload Anchore scan results to GitHub Security tab
+      - name: Upload Anchore scan results for ${{ steps.local_version.outputs.local_version }} to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: success() && steps.anchore_scan.outcome == 'success' && steps.anchore_scan.conclusion == 'success'
+        with:
+          sarif_file: ${{ steps.anchore_scan.outputs.sarif }}
+          category: "anchore-${{ steps.local_version.outputs.local_version }}"
+
+      # Generate vulnerability summary for container image
+      - name: Generate vulnerability summary
+        if: success() && steps.anchore_scan.outcome == 'success' && steps.anchore_scan.conclusion == 'success'
+        run: |
+          echo "## Container Image Vulnerability Scan Results" >> $GITHUB_STEP_SUMMARY
+
+          if [[ -f "${{ steps.anchore_scan.outputs.sarif }}" ]]; then
+            VULN_COUNT=$(jq -r '.runs[].results | length' ${{ steps.anchore_scan.outputs.sarif }} || echo "0")
+            echo "| Category | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "| -------- | ----- |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Vulnerabilities | $VULN_COUNT |" >> $GITHUB_STEP_SUMMARY
+
+            if [[ "$VULN_COUNT" -gt 0 && -f "${{ steps.anchore_scan.outputs.json }}" ]]; then
+              # Count by severity if JSON output is available
+              echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
+              echo "| -------- | ----- |" >> $GITHUB_STEP_SUMMARY
+
+              for SEV in "Critical" "High" "Medium" "Low" "Negligible"; do
+                # Convert severity to lowercase for jq comparison
+                SEV_LOWER=$(echo $SEV | tr '[:upper:]' '[:lower:]')
+                # Count vulnerabilities by severity
+                COUNT=$(jq -r '.matches[] | select(.vulnerability.severity | ascii_downcase == "'$SEV_LOWER'") | .vulnerability.id' \
+                  ${{ steps.anchore_scan.outputs.json }} 2>/dev/null | wc -l || echo "0")
+                echo "| $SEV | $COUNT |" >> $GITHUB_STEP_SUMMARY
+              done
+            fi
+          else
+            echo "No vulnerability data available" >> $GITHUB_STEP_SUMMARY
+          fi
 
       # Generate SPDX SBOM and submit to GitHub dependency graph
       - name: Generate SPDX SBOM for ${{ steps.local_version.outputs.local_version }}
@@ -533,6 +625,10 @@ jobs:
           - **SBOMs**: This release includes two Software Bill of Materials files:
              - \`zabbix-proxy-sbom-$BASE_VERSION.txt\`: Custom detailed SBOM with tool versions
              - \`sbom-spdx.json\`: Standard SPDX format for automated scanning
+          - **Security Scans**: Multiple vulnerability scans performed during build:
+             - Dockerfile scan: Early detection of vulnerabilities in build instructions
+             - Container image scan: Comprehensive scan of the final container image using Anchore Grype
+             - Results available in GitHub Security tab
 
           ### 📥 Container Images
           ```bash
@@ -585,8 +681,8 @@ jobs:
           IMAGE_TAG="$REGISTRY/$OWNER/$IMG_NAME:$VERSION"
 
           echo "Inspecting image metadata for $IMAGE_TAG..." >> $GITHUB_STEP_SUMMARY
-          # Use docker inspect to get the labels
-          docker inspect $IMAGE_TAG --format='{{ json .Config.Labels }}' | jq . > image_labels.json
+          # Use docker inspect to get the labels - escaping curly braces to avoid YAML parser confusion
+          docker inspect $IMAGE_TAG --format='{''{''}'' json .Config.Labels ''}''{''}'' | jq . > image_labels.json
 
           # Check for required OCI labels
           REQUIRED_LABELS=(
