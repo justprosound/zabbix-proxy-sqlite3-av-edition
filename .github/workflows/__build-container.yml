@@ -668,7 +668,7 @@ jobs:
           docker cp $CONTAINER_ID:/usr/local/share/zabbix-proxy-sbom.txt ./zabbix-proxy-sbom-${{ steps.local_version.outputs.local_version }}.txt
           docker rm $CONTAINER_ID
 
-      # Verify image metadata was properly applied
+      # Verify image metadata was properly applied and check for vulnerability mitigation
       - name: Verify OCI metadata for ${{ steps.local_version.outputs.local_version }}
         if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
         run: |
