@@ -682,8 +682,9 @@ jobs:
           IMAGE_TAG="$REGISTRY/$OWNER/$IMG_NAME:$VERSION"
 
           echo "Inspecting image metadata for $IMAGE_TAG..." >> $GITHUB_STEP_SUMMARY
-          # Use docker inspect to get the labels - escaping curly braces to avoid YAML parser confusion
-          docker inspect $IMAGE_TAG --format='{''{''}'' json .Config.Labels ''}''{''}'' | jq . > image_labels.json
+          # Use docker inspect to get the labels - using a variable to avoid YAML parser issues with curly braces
+          FORMAT='{{ json .Config.Labels }}'
+          docker inspect $IMAGE_TAG --format="$FORMAT" | jq . > image_labels.json
 
           # Check for required OCI labels
           REQUIRED_LABELS=(
