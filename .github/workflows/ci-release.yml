@@ -152,5 +152,5 @@ jobs:
     with:
       zabbix_version: ${{ matrix.zabbix_version }}
       major_minor: ${{ matrix.major_minor }}
-      is_latest: ${{ matrix.is_latest }}
+      is_lts: ${{ matrix.is_lts }}
       latest_version: ${{ needs.detect-versions.outputs.latest_version }}

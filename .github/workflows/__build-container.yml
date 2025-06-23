@@ -246,9 +246,9 @@ jobs:
           fi
 
           if [ "$IS_LTS" == "true" ]; then
-            echo "| LTS | $MAJOR_MINOR | ✅ Will tag as \`lts\` (7.0/8.0 series) |" >> $GITHUB_STEP_SUMMARY
+            echo "| LTS | $MAJOR_MINOR | ✅ Will tag as \`lts\` (LTS version) |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| LTS | N/A | ❌ Will NOT tag as \`lts\` (not 7.0/8.0 series) |" >> $GITHUB_STEP_SUMMARY
+            echo "| LTS | N/A | ❌ Will NOT tag as \`lts\` (not an LTS version) |" >> $GITHUB_STEP_SUMMARY
           fi
 
       # Security: Scan Dockerfile for vulnerabilities before building
