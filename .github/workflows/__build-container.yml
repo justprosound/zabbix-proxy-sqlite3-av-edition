@@ -9,11 +9,11 @@ on:
       major_minor:
         required: true
         type: string
-      is_latest:
+      is_lts:
         required: false
         type: string
         default: 'false'
-        description: "Whether this is the LTS version (as a string 'true' or 'false')"
+        description: "Whether this is an LTS version (as a string 'true' or 'false')"
       latest_version:
         required: true
         type: string
@@ -221,6 +221,17 @@ jobs:
           # Set output values for use in later steps
           echo "should_tag_latest=$SHOULD_TAG_LATEST" >> $GITHUB_OUTPUT
 
+          # Determine if this is an LTS version
+          IS_LTS="${{ inputs.is_lts }}"
+
+          if [ "$IS_LTS" == "true" ]; then
+            echo "✅ This is an LTS version ($MAJOR_MINOR series) - will apply 'lts' tag"
+            echo "is_lts=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Not an LTS version - will NOT apply 'lts' tag"
+            echo "is_lts=false" >> $GITHUB_OUTPUT
+          fi
+
           # Add information to step summary
           echo "## 🏷️ Version Tag Management" >> $GITHUB_STEP_SUMMARY
           echo "| Version Type | Value | Tag Status |" >> $GITHUB_STEP_SUMMARY
@@ -229,9 +240,15 @@ jobs:
           echo "| Major.Minor | $MAJOR_MINOR | Will tag as \`$MAJOR_MINOR\` |" >> $GITHUB_STEP_SUMMARY
 
           if [ "$SHOULD_TAG_LATEST" == "true" ]; then
-            echo "| Latest | $LATEST_VERSION | ✅ Will tag as \`latest\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Latest | $LATEST_VERSION | ✅ Will tag as \`latest\` (highest version overall) |" >> $GITHUB_STEP_SUMMARY
           else
             echo "| Latest | $LATEST_VERSION | ❌ Will NOT tag as \`latest\` (reserved for $LATEST_VERSION) |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$IS_LTS" == "true" ]; then
+            echo "| LTS | $MAJOR_MINOR | ✅ Will tag as \`lts\` (7.0/8.0 series) |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| LTS | N/A | ❌ Will NOT tag as \`lts\` (not 7.0/8.0 series) |" >> $GITHUB_STEP_SUMMARY
           fi
 
       # Security: Scan Dockerfile for vulnerabilities before building
@@ -331,7 +348,7 @@ jobs:
               ) || ''
             }}
             ${{
-              inputs.is_latest == 'true' &&
+              inputs.is_lts == 'true' &&
               format(
                 '{0}/{1}/{2}:lts',
                 steps.repo_analysis.outputs.registry,
@@ -584,7 +601,7 @@ jobs:
           LOCAL_VERSION="${{ steps.local_version.outputs.local_version }}"
           BASE_VERSION="${{ inputs.zabbix_version }}"
           MAJOR_MINOR="${{ inputs.major_minor }}"
-          IS_LATEST="${{ inputs.is_latest }}"
+          IS_LTS="${{ inputs.is_lts }}"
           IS_LOCAL_CHANGE="${{ steps.local_version.outputs.is_local_change }}"
 
           # Start building release notes
@@ -650,7 +667,7 @@ jobs:
           - \`${LOCAL_VERSION}\` - This specific version
           - \`${MAJOR_MINOR}\` - Latest patch for this major.minor
           $(if [ "$IS_LOCAL_CHANGE" = "false" ]; then echo "- \`${BASE_VERSION}\` - Upstream Zabbix version"; fi)
-          $(if [ "$IS_LATEST" = "true" ]; then echo "- \`lts\` - Long-Term Support version (most stable)"; fi)
+          $(if [ "$IS_LTS" = "true" ]; then echo "- \`lts\` - Long-Term Support version"; fi)
           $(if [ "${{ steps.version_tag_management.outputs.should_tag_latest }}" = "true" ]; then echo "- \`latest\` - Latest version with highest version number"; fi)
           EOF
 
