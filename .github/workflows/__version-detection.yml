@@ -196,7 +196,8 @@ jobs:
             [[ "$VERSION" == "$LATEST_VERSION" ]] && IS_LATEST="true"
 
             # Add this version to the matrix
-            MATRIX_JSON+='{"zabbix_version": "'$VERSION'", "major_minor": "'$MAJOR_MINOR'", "is_lts": "'$IS_LTS'", "is_latest": "'$IS_LATEST'"}'
+            # We're removing is_latest and keeping is_lts consistent with the workflow input parameter
+            MATRIX_JSON+='{"zabbix_version": "'$VERSION'", "major_minor": "'$MAJOR_MINOR'", "is_lts": "'$IS_LTS'"}'
 
             # Add comma if not the last item
             COUNT=$((COUNT + 1))
@@ -240,15 +241,67 @@ jobs:
 
           # Add validation info to workflow summary
           echo "## Matrix Generation Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Version | Major.Minor | Is LTS (Current LTS) | Is Latest (Highest Version) |" >> $GITHUB_STEP_SUMMARY
-          echo "| ------- | ----------- | -------------------- | -------------------------- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | Major.Minor | Is LTS | Latest Version |" >> $GITHUB_STEP_SUMMARY
+          echo "| ------- | ----------- | ------ | -------------- |" >> $GITHUB_STEP_SUMMARY
           for VERSION in $SUPPORTED_VERSIONS; do
             [[ -z "$VERSION" ]] && continue
             [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && continue
             MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
             IS_LTS="No"
-            IS_LATEST="No"
+            LATEST_FLAG=""
             if [[ "$VERSION" == "$LTS_VERSION" ]]; then IS_LTS="Yes"; fi
-            if [[ "$VERSION" == "$LATEST_VERSION" ]]; then IS_LATEST="Yes"; fi
-            echo "| $VERSION | $MAJOR_MINOR | $IS_LTS | $IS_LATEST |" >> $GITHUB_STEP_SUMMARY
+            if [[ "$VERSION" == "$LATEST_VERSION" ]]; then LATEST_FLAG="✓ (Latest)"; fi
+            echo "| $VERSION | $MAJOR_MINOR | $IS_LTS | $LATEST_FLAG |" >> $GITHUB_STEP_SUMMARY
           done
+
+      # New step to update Dockerfile with the latest version
+      - name: Update Dockerfile with latest version
+        id: update_dockerfile
+        run: |
+          LATEST_VERSION="${{ steps.fetch_zabbix_versions.outputs.latest_version }}"
+          echo "Updating Dockerfile with latest version: $LATEST_VERSION"
+
+          # Check current version in Dockerfile
+          CURRENT_VERSION=$(grep -oP 'ARG ZABBIX_VERSION=ubuntu-\K[0-9]+\.[0-9]+\.[0-9]+' Dockerfile || echo "unknown")
+          echo "Current version in Dockerfile: $CURRENT_VERSION"
+
+          if [[ "$CURRENT_VERSION" != "$LATEST_VERSION" ]]; then
+            echo "Version needs updating from $CURRENT_VERSION to $LATEST_VERSION"
+
+            # Update the Dockerfile
+            sed -i "s/ARG ZABBIX_VERSION=ubuntu-[0-9]\+\.[0-9]\+\.[0-9]\+/ARG ZABBIX_VERSION=ubuntu-$LATEST_VERSION/" Dockerfile
+
+            # Verify the change
+            NEW_VERSION=$(grep -oP 'ARG ZABBIX_VERSION=ubuntu-\K[0-9]+\.[0-9]+\.[0-9]+' Dockerfile || echo "error")
+            if [[ "$NEW_VERSION" == "$LATEST_VERSION" ]]; then
+              echo "✅ Successfully updated Dockerfile to version $LATEST_VERSION"
+
+              # Commit and push the changes
+              git config --local user.email "github-actions[bot]@users.noreply.github.com"
+              git config --local user.name "github-actions[bot]"
+              git add Dockerfile
+
+              # Only commit if there are changes
+              if git diff --staged --quiet; then
+                echo "No changes to commit"
+              else
+                git commit -m "chore: update Zabbix version to $LATEST_VERSION [skip ci]"
+                git push
+                echo "Pushed Dockerfile update to repository"
+              fi
+            else
+              echo "::warning::Failed to update Dockerfile, got version $NEW_VERSION instead of $LATEST_VERSION"
+            fi
+          else
+            echo "Dockerfile already contains the latest version $LATEST_VERSION. No update needed."
+          fi
+
+          # Add to step summary
+          echo "## Dockerfile Version Update" >> $GITHUB_STEP_SUMMARY
+          echo "| Original Version | New Version | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| --------------- | ---------- | ------ |" >> $GITHUB_STEP_SUMMARY
+          if [[ "$CURRENT_VERSION" != "$LATEST_VERSION" ]]; then
+            echo "| $CURRENT_VERSION | $LATEST_VERSION | Updated ✅ |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| $CURRENT_VERSION | $CURRENT_VERSION | Already up to date ✓ |" >> $GITHUB_STEP_SUMMARY
+          fi
