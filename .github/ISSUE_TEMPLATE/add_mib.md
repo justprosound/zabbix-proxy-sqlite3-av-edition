@@ -1,6 +1,6 @@
 ---
 name: Add SNMP MIB
-about: Add a new SNMP MIB for inclusion in the container builds
+about: Request addition of a new SNMP MIB to the container
 title: 'feat(mib): add [MIB NAME] MIB'
 labels: 'enhancement, mibs'
 assignees: ''
@@ -40,18 +40,27 @@ Please provide information about the vendor/manufacturer who created this MIB:
 **Product Line:**
 **Documentation Link:**
 
+## Use Case
+
+<!--
+Please describe the use case for adding this MIB:
+- What devices will this support?
+- What monitoring functionality will this enable?
+-->
+
 ## Testing
 
 <!--
-Have you tested the MIB? Please describe any testing you have done:
-- Have you verified the MIB loads correctly?
-- Have you tested it with actual devices?
+If you have already tested this MIB, please describe:
+- Environment used for testing
+- Devices tested with
+- Any issues encountered
 -->
 
 ## Additional Information
 
 <!--
-Any additional information that may be helpful
+Any additional information that may be helpful for the maintainers
 -->
 
 ## Legal Disclaimer
