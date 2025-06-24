@@ -27,7 +27,7 @@ After running the workflow, historical versions will be available with the follo
 ### Default Image Name
 By default, images will be published to the GitHub Container Registry:
 ```
-ghcr.io/<repository-owner>/zabbix-proxy-sqlite3-av-edition:ubuntu-X.Y.Z
+ghcr.io/<repository-owner>/zabbix-proxy-sqlite3-av-edition:X.Y.Z
 ```
 
 The image name will be automatically derived based on your repository name, ensuring compatibility when forking the repository. The workflow is intelligent enough to extract meaningful name components from your repository name.
@@ -35,7 +35,7 @@ The image name will be automatically derived based on your repository name, ensu
 ### Custom Image Name
 If you provide a custom image name (e.g., "my-registry.com/user/repo"), images will be published as:
 ```
-my-registry.com/user/repo:ubuntu-X.Y.Z
+my-registry.com/user/repo:X.Y.Z
 ```
 
 Where X.Y.Z is the Zabbix version (e.g., 7.0.0, 7.0.1, etc.)

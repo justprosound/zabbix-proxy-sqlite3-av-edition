@@ -1,0 +1,223 @@
+name: Download MIBs
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Run weekly on Monday at 02:00 UTC
+  workflow_dispatch:  # Allow manual triggering
+    inputs:
+      force_update:
+        description: 'Force update all MIBs even if they exist'
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches: [main]
+    paths:
+      - 'mibs/mibs.json'  # Run when the MIBs configuration is updated
+
+# Security: Minimal required permissions
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  download-mibs:
+    name: Download SNMP MIBs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Read MIBs configuration
+        id: read_config
+        run: |
+          echo "Reading MIBs configuration from mibs.json..."
+          if [ ! -f "mibs/mibs.json" ]; then
+            echo "Error: mibs/mibs.json not found"
+            exit 1
+          fi
+          MIB_COUNT=$(jq '.mibs | length' mibs/mibs.json)
+          echo "Found $MIB_COUNT MIB entries to process"
+          echo "mib_count=$MIB_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Set up MIB directory
+        run: |
+          # Create directory if it doesn't exist
+          mkdir -p mibs
+          # Make sure the directory has the correct permissions
+          chmod 755 mibs
+          # Create .gitignore if it doesn't exist
+          if [ ! -f mibs/.gitignore ]; then
+            echo "# Ignore downloaded MIBs (they will be downloaded by the GitHub Action)" > mibs/.gitignore
+            echo "*.txt" >> mibs/.gitignore
+            echo "*.mib" >> mibs/.gitignore
+            echo "!README.md" >> mibs/.gitignore
+            echo "!mibs.json" >> mibs/.gitignore
+          fi
+
+      - name: Download MIBs
+        id: download
+        run: |
+          # Initialize counters
+          DOWNLOADED=0
+          SKIPPED=0
+          FAILED=0
+          UPDATED=0
+
+          # Parse the MIBs JSON file
+          MIB_COUNT=$(jq '.mibs | length' mibs/mibs.json)
+
+          # Process each MIB entry
+          for i in $(seq 0 $((MIB_COUNT-1))); do
+            NAME=$(jq -r ".mibs[$i].name" mibs/mibs.json)
+            URL=$(jq -r ".mibs[$i].url" mibs/mibs.json)
+            DESCRIPTION=$(jq -r ".mibs[$i].description" mibs/mibs.json)
+            VERSION=$(jq -r ".mibs[$i].version" mibs/mibs.json)
+
+            echo "Processing MIB: $NAME ($DESCRIPTION)"
+            echo "URL: $URL"
+
+            # Determine file extension based on URL or default to .txt
+            if [[ "$URL" == *".mib" ]]; then
+              EXT="mib"
+            else
+              EXT="txt"
+            fi
+
+            OUTPUT_FILE="mibs/$NAME.$EXT"
+
+            # Check if file exists and if we should force update
+            if [[ -f "$OUTPUT_FILE" && "${{ inputs.force_update }}" != "true" ]]; then
+              echo "MIB file already exists, skipping download: $OUTPUT_FILE"
+              SKIPPED=$((SKIPPED+1))
+              continue
+            fi
+
+            # Download the MIB file
+            echo "Downloading MIB to $OUTPUT_FILE..."
+            HTTP_CODE=$(curl -s -L -w "%{http_code}" -o "$OUTPUT_FILE" "$URL")
+
+            # Check if download was successful
+            if [[ "$HTTP_CODE" == "200" ]]; then
+              if [[ -f "$OUTPUT_FILE" ]]; then
+                FILESIZE=$(stat -c%s "$OUTPUT_FILE")
+                echo "Download successful: $FILESIZE bytes"
+                if [[ -f "$OUTPUT_FILE.sha256" ]]; then
+                  OLD_SHA256=$(cat "$OUTPUT_FILE.sha256")
+                  NEW_SHA256=$(sha256sum "$OUTPUT_FILE" | cut -d' ' -f1)
+                  if [[ "$OLD_SHA256" != "$NEW_SHA256" ]]; then
+                    echo "MIB file was updated (SHA256 changed)"
+                    echo "$NEW_SHA256" > "$OUTPUT_FILE.sha256"
+                    UPDATED=$((UPDATED+1))
+                  else
+                    echo "MIB file is unchanged"
+                    SKIPPED=$((SKIPPED+1))
+                  fi
+                else
+                  # Create initial SHA256 file
+                  sha256sum "$OUTPUT_FILE" | cut -d' ' -f1 > "$OUTPUT_FILE.sha256"
+                  DOWNLOADED=$((DOWNLOADED+1))
+                fi
+
+                # Update timestamp in the JSON file
+                TODAY=$(date -u +"%Y-%m-%d")
+                jq --arg date "$TODAY" --argjson idx "$i" '.mibs[$idx].last_updated = $date' mibs/mibs.json > mibs/mibs.json.tmp
+                mv mibs/mibs.json.tmp mibs/mibs.json
+              else
+                echo "Error: Downloaded file doesn't exist"
+                FAILED=$((FAILED+1))
+              fi
+            else
+              echo "Error: Download failed with HTTP code $HTTP_CODE"
+              FAILED=$((FAILED+1))
+            fi
+          done
+
+          # Output summary
+          echo "Download summary:"
+          echo "- Downloaded: $DOWNLOADED"
+          echo "- Updated: $UPDATED"
+          echo "- Skipped: $SKIPPED"
+          echo "- Failed: $FAILED"
+
+          # Set output variables
+          echo "downloaded=$DOWNLOADED" >> $GITHUB_OUTPUT
+          echo "updated=$UPDATED" >> $GITHUB_OUTPUT
+          echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+
+          # Exit with error if any downloads failed
+          if [[ $FAILED -gt 0 ]]; then
+            exit 1
+          fi
+
+      - name: Commit changes if MIBs were updated
+        if: steps.download.outputs.downloaded > 0 || steps.download.outputs.updated > 0
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          # Add all downloaded MIB files excluding those in .gitignore
+          git add mibs/*.sha256 mibs/mibs.json
+
+          # Create a commit message with details
+          COMMIT_MSG="chore(mibs): update MIB files"
+
+          if [[ "${{ steps.download.outputs.downloaded }}" -gt 0 ]]; then
+            COMMIT_MSG="${COMMIT_MSG}\n\nDownloaded ${{ steps.download.outputs.downloaded }} new MIB files"
+          fi
+
+          if [[ "${{ steps.download.outputs.updated }}" -gt 0 ]]; then
+            COMMIT_MSG="${COMMIT_MSG}\n\nUpdated ${{ steps.download.outputs.updated }} existing MIB files"
+          fi
+
+          # Commit changes
+          git commit -m "$COMMIT_MSG"
+
+          # Push changes
+          git push
+
+      - name: Generate MIB summary
+        run: |
+          echo "# Downloaded MIBs" > mibs/SUMMARY.md
+          echo "" >> mibs/SUMMARY.md
+          echo "Last updated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> mibs/SUMMARY.md
+          echo "" >> mibs/SUMMARY.md
+          echo "| Name | Description | Version | Last Updated |" >> mibs/SUMMARY.md
+          echo "|------|-------------|---------|-------------|" >> mibs/SUMMARY.md
+
+          MIB_COUNT=$(jq '.mibs | length' mibs/mibs.json)
+
+          for i in $(seq 0 $((MIB_COUNT-1))); do
+            NAME=$(jq -r ".mibs[$i].name" mibs/mibs.json)
+            URL=$(jq -r ".mibs[$i].url" mibs/mibs.json)
+            DESCRIPTION=$(jq -r ".mibs[$i].description" mibs/mibs.json)
+            VERSION=$(jq -r ".mibs[$i].version" mibs/mibs.json)
+            LAST_UPDATED=$(jq -r ".mibs[$i].last_updated" mibs/mibs.json)
+
+            # Determine file extension based on URL
+            if [[ "$URL" == *".mib" ]]; then
+              EXT="mib"
+            else
+              EXT="txt"
+            fi
+
+            # Check if file exists and get SHA256 if it does
+            if [[ -f "mibs/$NAME.$EXT.sha256" ]]; then
+              SHA256=$(cat "mibs/$NAME.$EXT.sha256")
+              SHA_SHORT="${SHA256:0:7}..."
+            else
+              SHA_SHORT="N/A"
+            fi
+
+            echo "| [$NAME]($URL) | $DESCRIPTION | $VERSION | $LAST_UPDATED |" >> mibs/SUMMARY.md
+          done
+
+          # Commit the summary file
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add mibs/SUMMARY.md
+          git commit -m "docs(mibs): update MIB summary" || echo "No changes to commit"
+          git push || echo "No changes to push"
