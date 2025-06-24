@@ -1,0 +1,11 @@
+{
+  "mibs": [
+    {
+      "name": "net-svsi-mib-txt",
+      "url": "https://www.amx.com/ko/site_elements/net-svsi-mib-txt",
+      "description": "AMX SVSi MIB",
+      "version": "1.0.0",
+      "last_updated": "2025-06-24"
+    }
+  ]
+}
