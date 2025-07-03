@@ -51,8 +51,6 @@ jobs:
           # Create .gitignore if it doesn't exist
           if [ ! -f mibs/.gitignore ]; then
             echo "# Ignore downloaded MIBs (they will be downloaded by the GitHub Action)" > mibs/.gitignore
-            echo "*.txt" >> mibs/.gitignore
-            echo "*.mib" >> mibs/.gitignore
             echo "!README.md" >> mibs/.gitignore
             echo "!mibs.json" >> mibs/.gitignore
           fi
