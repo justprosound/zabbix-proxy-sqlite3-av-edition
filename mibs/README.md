@@ -59,7 +59,8 @@ This project includes an automated MIB management system that:
 
 1. **Downloads MIBs**: A GitHub Action automatically downloads MIBs from specified URLs
 2. **Tracks Changes**: SHA256 checksums are used to detect changes in MIB files
-3. **Updates Documentation**: A summary of available MIBs is maintained in `SUMMARY.md`
+3. **Commits MIB Files**: All MIB files are committed to the repository for easy tracking and auditing
+4. **Updates Documentation**: A summary of available MIBs is maintained in `SUMMARY.md`
 
 ### The `mibs.json` File
 
