@@ -109,6 +109,8 @@ jobs:
               if [[ -f "$OUTPUT_FILE" ]]; then
                 FILESIZE=$(stat -c%s "$OUTPUT_FILE")
                 echo "Download successful: $FILESIZE bytes"
+                # Calculate SHA256 checksum for the downloaded file
+                sha256sum "$OUTPUT_FILE" | cut -d' ' -f1 > "$OUTPUT_FILE.sha256"
                 DOWNLOADED=$((DOWNLOADED+1))
               else
                 echo "Error: Downloaded file doesn't exist"

@@ -42,19 +42,6 @@ jobs:
           echo "Found $MIB_COUNT MIB entries to process"
           echo "mib_count=$MIB_COUNT" >> $GITHUB_OUTPUT
 
-      - name: Set up MIB directory
-        run: |
-          # Create directory if it doesn't exist
-          mkdir -p mibs
-          # Make sure the directory has the correct permissions
-          chmod 755 mibs
-          # Create .gitignore if it doesn't exist
-          if [ ! -f mibs/.gitignore ]; then
-            echo "# Ignore downloaded MIBs (they will be downloaded by the GitHub Action)" > mibs/.gitignore
-            echo "!README.md" >> mibs/.gitignore
-            echo "!mibs.json" >> mibs/.gitignore
-          fi
-
       - name: Download MIBs
         id: download
         run: |
@@ -157,8 +144,8 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          # Add all downloaded MIB files excluding those in .gitignore
-          git add mibs/*.sha256 mibs/mibs.json
+          # Add all downloaded MIB files and related metadata
+          git add mibs/*.sha256 mibs/mibs.json mibs/*.txt mibs/*.mib
 
           # Create a commit message with details
           COMMIT_MSG="chore(mibs): update MIB files"
