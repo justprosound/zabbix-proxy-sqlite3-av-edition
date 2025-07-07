@@ -35,6 +35,9 @@ jobs:
       id-token: write
       actions: read
       security-events: write
+      # Needed for dependency graph submissions
+      issues: write
+      pull-requests: write
     outputs:
       release_id: ${{ steps.create_release.outputs.id }}
       release_tag: ${{ steps.local_version.outputs.local_version }}
@@ -527,16 +530,160 @@ jobs:
             echo "::warning::SPDX SBOM file is missing or empty"
           fi
 
-      # Generate SBOM and submit to GitHub dependency graph using Anchore SBOM Action
-      - name: Generate SBOM and submit ${{ steps.local_version.outputs.local_version }} to GitHub dependency graph
+      # Generate SBOM using Anchore SBOM Action and format it for dependency graph submission
+      - name: Generate SBOM for ${{ steps.local_version.outputs.local_version }}
         uses: anchore/sbom-action@v0
+        id: anchore_sbom_generation
         if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
         continue-on-error: true
         with:
           # Defining the full image path
           image: ${{ steps.repo_analysis.outputs.registry }}/${{ github.repository_owner }}/${{ steps.repo_analysis.outputs.image_name }}:${{ steps.local_version.outputs.local_version }}
           artifact-name: sbom-${{ steps.local_version.outputs.local_version }}.spdx.json
-          dependency-snapshot: true
+          output-file: ./sbom-${{ steps.local_version.outputs.local_version }}.json
+          format: cyclonedx-json
+          # Don't use dependency-snapshot directly as it requires specific formatting
+          dependency-snapshot: false
+
+      # Debug SBOM file format to help with troubleshooting
+      - name: Debug SBOM file format
+        if: success() && steps.anchore_sbom_generation.outcome == 'success' && steps.anchore_sbom_generation.conclusion == 'success'
+        run: |
+          SBOM_FILE="./sbom-${{ steps.local_version.outputs.local_version }}.json"
+          echo "## SBOM File Format Debug" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "$SBOM_FILE" ] && [ -s "$SBOM_FILE" ]; then
+            echo "SBOM file exists and has content" >> $GITHUB_STEP_SUMMARY
+            echo "File size: $(stat -c%s "$SBOM_FILE") bytes" >> $GITHUB_STEP_SUMMARY
+
+            # Check if file is valid JSON
+            if jq . "$SBOM_FILE" > /dev/null 2>&1; then
+              echo ":white_check_mark: File is valid JSON" >> $GITHUB_STEP_SUMMARY
+
+              # Extract key structure information for diagnosis
+              echo "### SBOM Top-Level Structure" >> $GITHUB_STEP_SUMMARY
+              echo '```json' >> $GITHUB_STEP_SUMMARY
+              jq 'keys' "$SBOM_FILE" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+
+              # Check if it has the expected CycloneDX format
+              if jq -e '.bomFormat == "CycloneDX"' "$SBOM_FILE" > /dev/null; then
+                echo ":white_check_mark: File follows CycloneDX format" >> $GITHUB_STEP_SUMMARY
+
+                # Extract component count for reference
+                COMPONENT_COUNT=$(jq '.components | length' "$SBOM_FILE")
+                echo "Contains $COMPONENT_COUNT components" >> $GITHUB_STEP_SUMMARY
+
+                # Sample first component for format inspection
+                echo "### Sample Component Format" >> $GITHUB_STEP_SUMMARY
+                echo '```json' >> $GITHUB_STEP_SUMMARY
+                jq '.components[0]' "$SBOM_FILE" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+              else
+                echo ":warning: File doesn't follow expected CycloneDX format" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo ":x: File is not valid JSON" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo ":x: SBOM file is missing or empty" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # Process SBOM and submit to GitHub dependency graph
+      - name: Process and submit dependency snapshot for ${{ steps.local_version.outputs.local_version }}
+        if: success() && steps.anchore_sbom_generation.outcome == 'success' && steps.anchore_sbom_generation.conclusion == 'success'
+        continue-on-error: true
+        run: |
+          echo "Processing SBOM for dependency graph submission..."
+          SBOM_FILE="./sbom-${{ steps.local_version.outputs.local_version }}.json"
+
+          if [ -f "$SBOM_FILE" ]; then
+            # Validate the SBOM file structure before processing
+            echo "Validating SBOM format..."
+            if ! jq . "$SBOM_FILE" > /dev/null 2>&1; then
+              echo "::warning::SBOM file is not valid JSON. Cannot create dependency snapshot."
+              echo ":x: SBOM file is not valid JSON. Cannot create dependency snapshot." >> $GITHUB_STEP_SUMMARY
+              exit 0
+            fi
+
+            # Create a formatted JSON file for dependency submission
+            echo "Creating dependency snapshot JSON..."
+            jq -n \
+              --arg version "${{ steps.local_version.outputs.local_version }}" \
+              --arg job "${{ github.job }}" \
+              --arg sha "${{ github.sha }}" \
+              --arg ref "${{ github.ref }}" \
+              --argjson detector "{\"name\": \"anchore-sbom\", \"version\": \"latest\"}" \
+              --slurpfile sbom "$SBOM_FILE" \
+              '{
+                "version": 0,
+                "sha": $sha,
+                "ref": $ref,
+                "job": $job,
+                "detector": $detector,
+                "metadata": {
+                  "buildTarget": $version
+                },
+                "manifests": $sbom
+              }' > dependency-snapshot.json
+
+            # Validate the dependency snapshot JSON
+            if ! jq . dependency-snapshot.json > /dev/null 2>&1; then
+              echo "::warning::Generated dependency snapshot is not valid JSON. Cannot submit to GitHub."
+              echo ":x: Generated dependency snapshot is not valid JSON. Cannot submit to GitHub." >> $GITHUB_STEP_SUMMARY
+              exit 0
+            fi
+
+            # Add debug information to help diagnose potential issues
+            echo "## Dependency Snapshot Structure" >> $GITHUB_STEP_SUMMARY
+            echo "```json" >> $GITHUB_STEP_SUMMARY
+            jq '{version, sha, ref, job, detector, metadata, "manifest_count": (.manifests | length)}' dependency-snapshot.json >> $GITHUB_STEP_SUMMARY
+            echo "```" >> $GITHUB_STEP_SUMMARY
+
+            # Check token permissions first
+            echo "Checking GitHub token permissions..."
+            TOKEN_INFO=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              "${{ github.api_url }}/repos/${{ github.repository }}")
+
+            # Extract permissions from token info
+            if echo "$TOKEN_INFO" | jq -e '.permissions' > /dev/null; then
+              echo "## GitHub Token Permissions" >> $GITHUB_STEP_SUMMARY
+              echo "```json" >> $GITHUB_STEP_SUMMARY
+              echo "$TOKEN_INFO" | jq '.permissions' >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
+            else
+              echo ":warning: Could not retrieve permissions for GitHub token" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            # Submit the snapshot to GitHub API
+            echo "Submitting dependency snapshot to GitHub..."
+            RESPONSE=$(curl -s -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Content-Type: application/json" \
+              "${{ github.api_url }}/repos/${{ github.repository }}/dependency-graph/snapshots" \
+              -d @dependency-snapshot.json \
+              -w "\n%{http_code}")
+
+            # Extract HTTP status code and response body
+            HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+            RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
+
+            # Check if submission was successful
+            if [[ "$HTTP_STATUS" =~ ^2[0-9][0-9]$ ]]; then
+              echo ":white_check_mark: Processed SBOM and submitted dependency snapshot to GitHub successfully (HTTP $HTTP_STATUS)" >> $GITHUB_STEP_SUMMARY
+              echo "Dependency snapshot submission completed successfully."
+            else
+              echo "::warning::GitHub API returned non-success status code: $HTTP_STATUS"
+              echo ":x: Failed to submit dependency snapshot. GitHub API returned: HTTP $HTTP_STATUS" >> $GITHUB_STEP_SUMMARY
+              echo "Error response: $RESPONSE_BODY" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "::warning::SBOM file not found at $SBOM_FILE. Skipping dependency snapshot submission."
+            echo ":x: SBOM file not found at $SBOM_FILE. Could not submit dependency snapshot." >> $GITHUB_STEP_SUMMARY
+          fi
 
       # Verify Docker Image Attestations
       - name: Verify Docker Image Attestations for ${{ steps.local_version.outputs.local_version }}
