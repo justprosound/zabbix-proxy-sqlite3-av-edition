@@ -609,13 +609,38 @@ jobs:
 
             # Create a formatted JSON file for dependency submission
             echo "Creating dependency snapshot JSON..."
+
+            # First, simplify the SBOM to reduce size and avoid validation errors
+            # Keep only essential fields for dependency detection
+            jq -c '{
+              bomFormat,
+              specVersion,
+              version,
+              metadata: {
+                component: {
+                  name,
+                  version
+                }
+              },
+              components: [
+                .components[] |
+                {
+                  name,
+                  version,
+                  purl,
+                  type
+                }
+              ] | select(.purl != null and .version != null)[0:500]
+            }' "$SBOM_FILE" > "simplified-sbom.json"
+
+            # Create the dependency snapshot with the simplified SBOM
             jq -n \
               --arg version "${{ steps.local_version.outputs.local_version }}" \
               --arg job "${{ github.job }}" \
               --arg sha "${{ github.sha }}" \
               --arg ref "${{ github.ref }}" \
               --argjson detector "{\"name\": \"anchore-sbom\", \"version\": \"latest\"}" \
-              --slurpfile sbom "$SBOM_FILE" \
+              --slurpfile sbom "simplified-sbom.json" \
               '{
                 "version": 0,
                 "sha": $sha,
@@ -635,11 +660,19 @@ jobs:
               exit 0
             fi
 
-            # Add debug information to help diagnose potential issues
+            # Add debug information to help diagnose potential issues - avoid exceeding step summary limits
             echo "## Dependency Snapshot Structure" >> $GITHUB_STEP_SUMMARY
-            echo "```json" >> $GITHUB_STEP_SUMMARY
-            jq '{version, sha, ref, job, detector, metadata, "manifest_count": (.manifests | length)}' dependency-snapshot.json >> $GITHUB_STEP_SUMMARY
-            echo "```" >> $GITHUB_STEP_SUMMARY
+            # Extract only key structure information to prevent step summary size limit issues
+            SNAPSHOT_SUMMARY=$(jq -c '{version, sha, ref, job, detector, metadata, "manifest_count": (.manifests | length)}' dependency-snapshot.json)
+            echo "Basic structure: $SNAPSHOT_SUMMARY" >> $GITHUB_STEP_SUMMARY
+
+            # Verify snapshot size and warn if it's too large
+            SNAPSHOT_SIZE=$(stat -c%s "dependency-snapshot.json")
+            echo "Snapshot size: $SNAPSHOT_SIZE bytes" >> $GITHUB_STEP_SUMMARY
+            if [ "$SNAPSHOT_SIZE" -gt 1000000 ]; then
+              echo "::warning::Dependency snapshot is very large ($SNAPSHOT_SIZE bytes). This may cause API submission issues."
+              echo ":warning: Dependency snapshot is very large ($SNAPSHOT_SIZE bytes). This may cause submission issues." >> $GITHUB_STEP_SUMMARY
+            fi
 
             # Check token permissions first
             echo "Checking GitHub token permissions..."
@@ -647,12 +680,11 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               "${{ github.api_url }}/repos/${{ github.repository }}")
 
-            # Extract permissions from token info
+            # Extract permissions from token info - avoid exceeding step summary limits
             if echo "$TOKEN_INFO" | jq -e '.permissions' > /dev/null; then
               echo "## GitHub Token Permissions" >> $GITHUB_STEP_SUMMARY
-              echo "```json" >> $GITHUB_STEP_SUMMARY
-              echo "$TOKEN_INFO" | jq '.permissions' >> $GITHUB_STEP_SUMMARY
-              echo "```" >> $GITHUB_STEP_SUMMARY
+              PERMISSIONS_SUMMARY=$(echo "$TOKEN_INFO" | jq -c '.permissions')
+              echo "Permissions: $PERMISSIONS_SUMMARY" >> $GITHUB_STEP_SUMMARY
             else
               echo ":warning: Could not retrieve permissions for GitHub token" >> $GITHUB_STEP_SUMMARY
             fi
@@ -681,16 +713,26 @@ jobs:
               echo "::notice::This is normal when running from certain workflows."
               echo ":information_source: Dependency snapshot submission skipped due to permission restrictions." >> $GITHUB_STEP_SUMMARY
               echo ":information_source: This is normal behavior when running from certain workflows." >> $GITHUB_STEP_SUMMARY
-              echo "Note: To enable dependency snapshots in the Security tab, please run this workflow directly rather than through a matrix build." >> $GITHUB_STEP_SUMMARY
             elif [[ "$HTTP_STATUS" == "401" ]]; then
               echo "::notice::Skipping dependency snapshot submission due to authentication restrictions (HTTP 401)."
               echo "::notice::This is normal when running from certain workflows."
               echo ":information_source: Dependency snapshot submission skipped due to authentication restrictions." >> $GITHUB_STEP_SUMMARY
               echo ":information_source: This is normal behavior when running from certain workflows." >> $GITHUB_STEP_SUMMARY
+            elif [[ "$HTTP_STATUS" == "422" ]]; then
+              echo "::warning::Dependency snapshot validation failed (HTTP 422). The SBOM format may not be compatible."
+              echo ":warning: Dependency snapshot validation failed. The snapshot format may not be compatible with GitHub's requirements." >> $GITHUB_STEP_SUMMARY
+              # Only show a truncated error message to avoid step summary size issues
+              ERROR_SUMMARY=$(echo "$RESPONSE_BODY" | head -c 500)
+              echo "Error (truncated): $ERROR_SUMMARY..." >> $GITHUB_STEP_SUMMARY
+
+              # Since we've already made our best effort with the simplified SBOM, just continue
+              echo "::notice::Skipping dependency snapshot submission due to validation errors. This is non-critical."
             else
               echo "::warning::GitHub API returned non-success status code: $HTTP_STATUS"
               echo ":x: Failed to submit dependency snapshot. GitHub API returned: HTTP $HTTP_STATUS" >> $GITHUB_STEP_SUMMARY
-              echo "Error response: $RESPONSE_BODY" >> $GITHUB_STEP_SUMMARY
+              # Only show a truncated error message to avoid step summary size issues
+              ERROR_SUMMARY=$(echo "$RESPONSE_BODY" | head -c 500)
+              echo "Error (truncated): $ERROR_SUMMARY..." >> $GITHUB_STEP_SUMMARY
             fi
           else
             echo "::warning::SBOM file not found at $SBOM_FILE. Skipping dependency snapshot submission."
