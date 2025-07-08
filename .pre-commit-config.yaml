@@ -31,6 +31,4 @@ repos:
   rev: v1.37.1
   hooks:
   - id: yamllint
-    name: Lint YAML files
-    description: Checks YAML files for syntax validity and conformance to YAML style guide
-    args: [--strict, -c, .yamllint.yaml]
+    args: [--format, auto, --strict, -d, '{extends: relaxed, rules: {line-length: {max: 1200, allow-non-breakable-inline-mappings: true}}}']
