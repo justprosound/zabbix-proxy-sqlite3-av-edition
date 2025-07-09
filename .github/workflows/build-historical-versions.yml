@@ -59,11 +59,11 @@ env:
 jobs:
   # Step 1: Get all supported Zabbix versions from API
   get-supported-versions:
-    uses: ./.github/workflows/__version-detection.yml
+    uses: ./.github/workflows/version-detection.yml
 
   # Step 2: Get all Docker Hub tags matching our pattern
   get-dockerhub-tags:
-    uses: ./.github/workflows/__dockerhub-tags.yml
+    uses: ./.github/workflows/dockerhub-tags.yml
     with:
       repo: "zabbix/zabbix-proxy-sqlite3"
       tag_pattern: '^ubuntu-[0-9]+\.[0-9]+\.[0-9]+$'
@@ -71,7 +71,7 @@ jobs:
 
   # Step 3: Check if we need to rebuild containers
   check-changes:
-    uses: ./.github/workflows/__check-changes.yml
+    uses: ./.github/workflows/check-changes.yml
 
   # Step 4: Process versions and create build matrix
   prepare-build-matrix:
@@ -578,7 +578,7 @@ jobs:
     strategy:
       matrix: ${{ fromJson(needs.prepare-build-matrix.outputs.matrix) }}
       fail-fast: false
-    uses: ./.github/workflows/__build-container.yml
+    uses: ./.github/workflows/build-container.yml
     with:
       zabbix_version: ${{ matrix.zabbix_version }}
       major_minor: ${{ matrix.major_minor }}
@@ -590,7 +590,7 @@ jobs:
   update-docs:
     needs: [get-supported-versions, get-dockerhub-tags, prepare-build-matrix, build-images, check-changes]
     if: always()
-    uses: ./.github/workflows/__update-docs.yml
+    uses: ./.github/workflows/update-docs.yml
     with:
       latest_version: ${{ needs.get-supported-versions.outputs.latest_version }}
       lts_version: ${{ needs.get-supported-versions.outputs.lts_version }}

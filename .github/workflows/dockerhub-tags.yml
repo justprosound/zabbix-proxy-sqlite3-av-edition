@@ -1,0 +1,146 @@
+name: DockerHub Tags
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: 'The Docker Hub repository to check (e.g., zabbix/zabbix-proxy-sqlite3)'
+        required: true
+        type: string
+      tag_pattern:
+        description: 'Regex pattern to match tag names'
+        required: true
+        type: string
+      min_version:
+        description: 'Minimum version to include (e.g., 7.0.0)'
+        required: false
+        type: string
+      max_results:
+        description: 'Maximum number of tags to return'
+        required: false
+        type: number
+        default: 100
+    outputs:
+      all_versions:
+        description: 'All versions found as comma-separated list'
+        value: ${{ jobs.get-tags.outputs.versions }}
+      latest_version:
+        description: 'Latest version found'
+        value: ${{ jobs.get-tags.outputs.latest_version }}
+      count:
+        description: 'Number of versions found'
+        value: ${{ jobs.get-tags.outputs.count }}
+
+jobs:
+  get-tags:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.extract-versions.outputs.versions }}
+      latest_version: ${{ steps.extract-versions.outputs.latest_version }}
+      count: ${{ steps.extract-versions.outputs.count }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Query Docker Hub API
+        id: extract-versions
+        env:
+          REPO: ${{ inputs.repo }}
+          TAG_PATTERN: ${{ inputs.tag_pattern }}
+          MIN_VERSION: ${{ inputs.min_version }}
+          MAX_RESULTS: ${{ inputs.max_results }}
+        run: |
+          import requests
+          import re
+          import os
+          import sys
+          from operator import itemgetter
+
+          # Get environment variables
+          repo = os.environ.get('REPO')
+          tag_pattern = os.environ.get('TAG_PATTERN')
+          min_version_str = os.environ.get('MIN_VERSION', '')
+          max_results = int(os.environ.get('MAX_RESULTS', 100))
+
+          # Parse min_version into tuple for comparison
+          min_version = tuple(map(int, min_version_str.split('.'))) if min_version_str else (0, 0, 0)
+
+          # Regular expression for extracting version from tag
+          tag_regex = re.compile(tag_pattern)
+          # Regular expression to extract numeric version from ubuntu- tags
+          version_extract_regex = re.compile(r'ubuntu-([0-9]+\.[0-9]+\.[0-9]+)')
+
+          print(f"Fetching tags for {repo} with pattern {tag_pattern}")
+          print(f"Minimum version: {min_version_str if min_version_str else 'Not specified'}")
+
+          all_versions = []
+          page = 1
+          url = f"https://hub.docker.com/v2/repositories/{repo}/tags"
+
+          while url and len(all_versions) < max_results:
+              response = requests.get(url, params={'page_size': 100})
+              if response.status_code != 200:
+                  print(f"Error fetching tags: {response.status_code}")
+                  break
+
+              data = response.json()
+
+              for item in data.get('results', []):
+                  tag_name = item.get('name')
+                  if tag_name and tag_regex.match(tag_name):
+                      # Extract version from tag name
+                      match = version_extract_regex.match(tag_name)
+                      if match:
+                          version_str = match.group(1)
+                          # Convert version to tuple for comparison
+                          version_parts = tuple(map(int, version_str.split('.')))
+
+                          # Check if version meets minimum requirement
+                          if version_parts >= min_version:
+                              all_versions.append((version_str, version_parts))
+                              print(f"Found valid tag: {tag_name} -> version {version_str}")
+
+              # Get next page URL
+              url = data.get('next')
+              page += 1
+
+              # Break if we've reached the maximum number of results
+              if len(all_versions) >= max_results:
+                  print(f"Reached maximum results limit ({max_results})")
+                  break
+
+          # Sort versions by numeric version (newest first)
+          all_versions.sort(key=itemgetter(1), reverse=True)
+
+          # Extract just the version strings
+          version_strings = [v[0] for v in all_versions]
+
+          # Get latest version
+          latest_version = version_strings[0] if version_strings else ""
+
+          # Join versions with comma
+          versions_csv = ",".join(version_strings)
+
+          # Set outputs using the current GitHub Actions syntax
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"versions={versions_csv}\n")
+              f.write(f"latest_version={latest_version}\n")
+              f.write(f"count={len(version_strings)}\n")
+
+          # Print summary
+          print(f"\nFound {len(version_strings)} versions matching criteria")
+          if version_strings:
+              print(f"Latest version: {latest_version}")
+              print("All versions: " + ", ".join(version_strings[:10]) + ("..." if len(version_strings) > 10 else ""))
+        shell: python
