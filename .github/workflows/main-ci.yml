@@ -1,14 +1,14 @@
-# Primary workflow for Zabbix Proxy SQLite3
-# This workflow handles version detection, container building, and GitHub releases
-# It automatically rebuilds containers when dependencies change
-
-name: CI & Release Chain
+name: 'Main CI/CD Pipeline'
 
 on:
   schedule:
     - cron: '0 0 * * *'  # Run daily at midnight UTC
   workflow_dispatch:
     inputs:
+      zabbix_version:
+        description: 'Zabbix version to build (e.g., 7.0.13)'
+        required: false
+        default: ''
       force_rebuild:
         description: 'Force rebuild of all containers'
         required: false
@@ -41,14 +41,14 @@ env:
   ALLOWED_REGISTRIES: "ghcr.io"
   REGISTRY: "ghcr.io"
   # Default repo name, can be customized in repository settings or overrides
-  REPO_NAME: "zabbix-proxy-sqlite3"
+  REPO_NAME: "zabbix-proxy-sqlite3-av-edition"
   # Default base name for documentation and references
   BASE_NAME: "Zabbix Proxy SQLite3 AV Edition"
 
 jobs:
   # First, detect Zabbix versions
   detect-versions:
-    uses: ./.github/workflows/__version-detection.yml
+    uses: ./.github/workflows/version-detection.yml
 
   # Download MIBs from configuration
   download-mibs:
@@ -136,21 +136,8 @@ jobs:
 
   # Check if we need to rebuild containers
   check-changes:
-    uses: ./.github/workflows/__check-changes.yml
+    uses: ./.github/workflows/check-changes.yml
     needs: [download-mibs]
-
-  # Update documentation - moved to run after build completes
-  update-docs:
-    needs: [detect-versions, build-containers]
-    # Always run this job, but the workflow itself will check build success
-    if: always()
-    uses: ./.github/workflows/__update-docs.yml
-    with:
-      latest_version: ${{ needs.detect-versions.outputs.latest_version }}
-      lts_version: ${{ needs.detect-versions.outputs.lts_version }}
-      all_versions: ${{ needs.detect-versions.outputs.all_versions }}
-      # Only update README versions if build was successful
-      build_success: ${{ needs.build-containers.result == 'success' }}
 
   # Build and push containers in matrix
   matrix-setup:
@@ -233,9 +220,22 @@ jobs:
     strategy:
       matrix: ${{ fromJson(needs.matrix-setup.outputs.matrix) }}
       fail-fast: false
-    uses: ./.github/workflows/__build-container.yml
+    uses: ./.github/workflows/build-container.yml
     with:
       zabbix_version: ${{ matrix.zabbix_version }}
       major_minor: ${{ matrix.major_minor }}
       is_lts: ${{ matrix.is_lts }}
       latest_version: ${{ needs.detect-versions.outputs.latest_version }}
+
+  # Update documentation - run after build completes
+  update-docs:
+    needs: [detect-versions, build-containers]
+    # Always run this job, but the workflow itself will check build success
+    if: always()
+    uses: ./.github/workflows/update-docs.yml
+    with:
+      latest_version: ${{ needs.detect-versions.outputs.latest_version }}
+      lts_version: ${{ needs.detect-versions.outputs.lts_version }}
+      all_versions: ${{ needs.detect-versions.outputs.all_versions }}
+      # Only update README versions if build was successful
+      build_success: ${{ needs.build-containers.result == 'success' }}

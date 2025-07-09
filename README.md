@@ -1,6 +1,6 @@
 # 🔍 Zabbix Proxy SQLite3 for AV System Monitoring
 
-[![Build & Push](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/ci-release.yml/badge.svg)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/ci-release.yml)
+[![Build & Push](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/main-ci.yml/badge.svg)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/main-ci.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/justprosound/zabbix-proxy-sqlite3-av-edition)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
 
@@ -166,6 +166,7 @@ docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:7.0.13
 - 🏗️ **CI/CD pipeline** with multi-architecture builds
 - 🚀 **Automatic releases** for each upstream Zabbix version
 - 🏷️ **Smart versioning** with local change tracking
+- 🧹 **Consolidated workflows** for better maintainability ([see details](WORKFLOW-CHANGES.md))
 
 ### 📦 Release Strategy
 

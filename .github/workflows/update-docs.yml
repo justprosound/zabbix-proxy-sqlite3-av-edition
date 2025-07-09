@@ -1,4 +1,4 @@
-name: ◆ reusable | Update Documentation
+name: 'Update Documentation'
 
 on:
   workflow_call:
@@ -277,7 +277,7 @@ jobs:
             for file in $MARKDOWN_FILES; do
               if grep -q "ghcr\.io/" "$file"; then
                 # First ensure correct base format
-                sed -i "s|ghcr\.io/[^/:]*/zabbix-proxy-sqlite3|ghcr\.io/$REPO_OWNER/$REPO_NAME|g" "$file"
+                sed -i "s|ghcr\.io/[^/:]*/zabbix-proxy-sqlite3|ghcr.io/$REPO_OWNER/$REPO_NAME|g" "$file"
                 # Then remove duplicates in a loop until none remain
                 while grep -q "av-edition-av-edition" "$file"; do
                   sed -i "s|-av-edition-av-edition|-av-edition|g" "$file"
