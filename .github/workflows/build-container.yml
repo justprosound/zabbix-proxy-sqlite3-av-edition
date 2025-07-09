@@ -296,19 +296,19 @@ jobs:
             echo "No vulnerability data available" >> $GITHUB_STEP_SUMMARY
           fi
 
-      # Security: Generate SBOM during build with max-level provenance
-      - name: Build and push images
-        id: build_push
-        # Only run this step if the upstream image check was successful (upstream_exists is true or not defined)
+
+      # Build image only (do not push yet)
+      - name: Build image (no push)
+        id: build_image
         if: success() && (steps.check_upstream_image.outputs.upstream_exists != 'false')
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
-          provenance: mode=max  # Security: Enable max-level provenance attestation
-          sbom: true           # Security: Generate SBOM
+          push: false
+          provenance: mode=max
+          sbom: true
           platforms: linux/amd64
-          outputs: type=image
+          outputs: type=docker
           file: ./Dockerfile
           secrets: |
             "github_token=${{ secrets.GITHUB_TOKEN }}"
@@ -316,12 +316,6 @@ jobs:
             ZABBIX_VERSION=ubuntu-${{ inputs.zabbix_version }}
             BUILD_DATE=${{ steps.build_timestamp.outputs.DATE }}
             VCS_REF=${{ github.sha }}
-          # Tags based on version information and status
-          # - Local version (which may include .N suffix for local changes)
-          # - Major.minor version (only for highest patch version in each series)
-          # - Original Zabbix version (if not a local change)
-          # - LTS tag if applicable
-          # - Latest tag if applicable (only for the absolute highest version)
           tags: |
             ${{
               format(
@@ -369,12 +363,93 @@ jobs:
                 steps.repo_analysis.outputs.image_name
               ) || ''
             }}
-          # Image metadata labels
-          # - Basic metadata
-          # - Source control information
-          # - Build reproducibility metadata
-          # - Legal information
-          # - Custom Zabbix metadata
+          labels: |
+            org.opencontainers.image.title=Zabbix Proxy SQLite3 for AV Systems
+            org.opencontainers.image.description=Zabbix Proxy SQLite3 for AV Systems
+            org.opencontainers.image.version=${{ inputs.zabbix_version }}
+            org.opencontainers.image.base.name=zabbix/zabbix-proxy-sqlite3
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.created=${{ steps.build_timestamp.outputs.DATE }}
+            org.opencontainers.image.authors=${{ github.repository_owner }}
+            org.opencontainers.image.vendor=${{ github.repository_owner }}
+            org.opencontainers.image.licenses=AGPL-3.0
+            org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/main/README.md
+            org.zabbix.upstream.version=${{ inputs.zabbix_version }}
+            org.zabbix.local.version=${{ steps.local_version.outputs.local_version }}
+            org.zabbix.build.date=${{ steps.build_timestamp.outputs.DATE }}
+            org.zabbix.vcs.ref=${{ github.sha }}
+            org.zabbix.container.immutable=true
+
+      # ...existing scan, SBOM, and validation steps...
+
+      # Push image only if all checks pass
+      - name: Push image
+        id: push_image
+        if: success() && (steps.check_upstream_image.outputs.upstream_exists != 'false')
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          provenance: mode=max
+          sbom: true
+          platforms: linux/amd64
+          outputs: type=image
+          file: ./Dockerfile
+          secrets: |
+            "github_token=${{ secrets.GITHUB_TOKEN }}"
+          build-args: |
+            ZABBIX_VERSION=ubuntu-${{ inputs.zabbix_version }}
+            BUILD_DATE=${{ steps.build_timestamp.outputs.DATE }}
+            VCS_REF=${{ github.sha }}
+          tags: |
+            ${{
+              format(
+                '{0}/{1}/{2}:{3}',
+                steps.repo_analysis.outputs.registry,
+                github.repository_owner,
+                steps.repo_analysis.outputs.image_name,
+                steps.local_version.outputs.local_version
+              )
+            }}
+            ${{
+              format(
+                '{0}/{1}/{2}:{3}',
+                steps.repo_analysis.outputs.registry,
+                github.repository_owner,
+                steps.repo_analysis.outputs.image_name,
+                inputs.major_minor
+              )
+            }}
+            ${{
+              steps.local_version.outputs.is_local_change == 'false' &&
+              format(
+                '{0}/{1}/{2}:{3}',
+                steps.repo_analysis.outputs.registry,
+                github.repository_owner,
+                steps.repo_analysis.outputs.image_name,
+                inputs.zabbix_version
+              ) || ''
+            }}
+            ${{
+              inputs.is_lts == 'true' &&
+              format(
+                '{0}/{1}/{2}:lts',
+                steps.repo_analysis.outputs.registry,
+                github.repository_owner,
+                steps.repo_analysis.outputs.image_name
+              ) || ''
+            }}
+            ${{
+              steps.version_tag_management.outputs.should_tag_latest == 'true' &&
+              format(
+                '{0}/{1}/{2}:latest',
+                steps.repo_analysis.outputs.registry,
+                github.repository_owner,
+                steps.repo_analysis.outputs.image_name
+              ) || ''
+            }}
           labels: |
             org.opencontainers.image.title=Zabbix Proxy SQLite3 for AV Systems
             org.opencontainers.image.description=Zabbix Proxy SQLite3 for AV Systems
