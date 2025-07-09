@@ -1,4 +1,4 @@
-name: ◆ reusable | Check for Changes
+name: 'Check for Changes'
 
 on:
   workflow_call:
