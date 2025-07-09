@@ -1,0 +1,40 @@
+name: 'Upstream Image Check'
+description: 'Verify that the upstream Zabbix image exists before proceeding'
+inputs:
+  zabbix_version:
+    description: 'The Zabbix version to check'
+    required: true
+
+outputs:
+  upstream_exists:
+    description: 'Whether the upstream image exists'
+    value: ${{ steps.check_upstream_image.outputs.upstream_exists }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Verify upstream Zabbix image exists
+      id: check_upstream_image
+      shell: bash
+      continue-on-error: true
+      run: |
+        UPSTREAM_IMAGE="zabbix/zabbix-proxy-sqlite3:ubuntu-${{ inputs.zabbix_version }}"
+        echo "Checking if upstream image exists: $UPSTREAM_IMAGE"
+
+        # Attempt to pull the image to verify it exists
+        if docker pull "$UPSTREAM_IMAGE" &>/dev/null; then
+          echo "✅ Upstream image $UPSTREAM_IMAGE exists and is accessible"
+          echo "upstream_exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ ERROR: Upstream image $UPSTREAM_IMAGE does not exist or is not accessible"
+          echo "::warning::Upstream image $UPSTREAM_IMAGE not found! Build will likely fail."
+          echo "upstream_exists=false" >> $GITHUB_OUTPUT
+
+          # Add information to step summary
+          echo "## ⚠️ Upstream Image Verification Failed" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | Details |" >> $GITHUB_STEP_SUMMARY
+          echo "| ------ | ------- |" >> $GITHUB_STEP_SUMMARY
+          echo "| ❌ Failed | Upstream image \`$UPSTREAM_IMAGE\` does not exist or is not accessible |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📝 Impact | The build will likely fail as it depends on this base image |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔍 Resolution | Verify that the Zabbix version specified is correct and available |" >> $GITHUB_STEP_SUMMARY
+        fi

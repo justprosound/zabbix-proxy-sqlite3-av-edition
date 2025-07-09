@@ -1,0 +1,57 @@
+name: 'Create GitHub Release'
+description: 'Creates a GitHub release with assets'
+inputs:
+  tag_name:
+    description: 'Tag name for the release'
+    required: true
+  name:
+    description: 'Release name'
+    required: true
+  body_file:
+    description: 'Path to file containing release notes'
+    required: true
+  make_latest:
+    description: 'Whether to mark this as the latest release'
+    required: false
+    default: 'false'
+  assets:
+    description: 'List of assets to include (newline-separated)'
+    required: false
+    default: ''
+outputs:
+  id:
+    description: 'ID of the created release'
+    value: ${{ steps.create_release.outputs.id }}
+  url:
+    description: 'URL of the created release'
+    value: ${{ steps.create_release.outputs.url }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Prepare release assets
+      id: prepare_assets
+      shell: bash
+      run: |
+        ASSETS="${{ inputs.assets }}"
+        if [ -z "$ASSETS" ]; then
+          echo "No assets to include in release"
+        else
+          echo "Assets to include in release:"
+          echo "$ASSETS"
+        fi
+
+    - name: Create GitHub Release
+      id: create_release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ inputs.tag_name }}
+        name: ${{ inputs.name }}
+        body_path: ${{ inputs.body_file }}
+        draft: false
+        prerelease: false
+        make_latest: ${{ inputs.make_latest }}
+        files: ${{ inputs.assets }}
+        fail_on_unmatched_files: false
+      env:
+        GITHUB_TOKEN: ${{ github.token }}

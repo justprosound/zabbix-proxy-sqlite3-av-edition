@@ -1,0 +1,82 @@
+name: 'Setup Docker Buildx for Multi-platform Builds'
+description: 'Sets up Docker Buildx with QEMU for multi-platform image building'
+inputs:
+  platforms:
+    description: 'Comma-separated list of platforms to enable'
+    required: false
+    default: 'linux/amd64,linux/arm64'
+  buildx_version:
+    description: 'Version of buildx to use'
+    required: false
+    default: 'latest'
+  qemu_version:
+    description: 'Version of QEMU to use for cross-platform builds'
+    required: false
+    default: 'latest'
+  builder_name:
+    description: 'Name for the buildx builder instance'
+    required: false
+    default: 'multiplatform-builder'
+  use_cache:
+    description: 'Whether to use buildx cache'
+    required: false
+    default: 'true'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: ${{ inputs.platforms }}
+        image: tonistiigi/binfmt:${{ inputs.qemu_version }}
+
+    - name: Set up Docker Buildx
+      id: buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        version: ${{ inputs.buildx_version }}
+        driver-opts: image=moby/buildkit:latest
+        buildkitd-flags: --debug
+        install: true
+
+    - name: Create buildx builder
+      shell: bash
+      run: |
+        echo "::group::Setting up buildx builder"
+        # Check if builder exists
+        if docker buildx ls | grep -q "${{ inputs.builder_name }}"; then
+          echo "Builder already exists, removing it"
+          docker buildx rm "${{ inputs.builder_name }}" || true
+        fi
+
+        echo "Creating new builder instance: ${{ inputs.builder_name }}"
+        docker buildx create --name "${{ inputs.builder_name }}" --use --platform ${{ inputs.platforms }}
+        docker buildx inspect --bootstrap "${{ inputs.builder_name }}"
+        echo "::endgroup::"
+
+    - name: Configure buildx caching
+      if: inputs.use_cache == 'true'
+      shell: bash
+      run: |
+        echo "::group::Configuring buildx caching"
+        echo "Setting up inline cache for buildx"
+        # Create cache directory if it doesn't exist
+        mkdir -p "${GITHUB_WORKSPACE}/.buildx-cache"
+
+        echo "Cache directory created at ${GITHUB_WORKSPACE}/.buildx-cache"
+        echo "::endgroup::"
+
+    - name: Verify buildx setup
+      shell: bash
+      run: |
+        echo "::group::Verifying buildx setup"
+        echo "Available platforms:"
+        docker buildx inspect "${{ inputs.builder_name }}" | grep "Platforms"
+
+        echo "Buildx version:"
+        docker buildx version
+
+        echo "Available builders:"
+        docker buildx ls
+        echo "::endgroup::"
