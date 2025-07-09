@@ -1,0 +1,180 @@
+name: 'Multi-Scanner Image Vulnerability Check'
+description: 'Scan Docker images with multiple vulnerability scanners and report results'
+inputs:
+  image_name:
+    description: 'Full name of the Docker image (repository/image)'
+    required: true
+  tag:
+    description: 'Tag of the Docker image to scan'
+    required: true
+  registry:
+    description: 'Container registry where the image is stored'
+    required: true
+    default: 'ghcr.io'
+  trivy_severity:
+    description: 'Severity levels to scan with Trivy (comma-separated)'
+    required: false
+    default: 'CRITICAL,HIGH'
+  grype_severity:
+    description: 'Severity levels to scan with Grype (comma-separated)'
+    required: false
+    default: 'Critical,High'
+  fail_on:
+    description: 'Comma-separated list of severities to fail on'
+    required: false
+    default: 'CRITICAL'
+  sarif_reports_dir:
+    description: 'Directory to store SARIF reports'
+    required: false
+    default: 'vulnerability-reports'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Create reports directory
+      shell: bash
+      run: mkdir -p "${{ inputs.sarif_reports_dir }}"
+
+    - name: Install Trivy scanner
+      uses: aquasecurity/trivy-action@0.14.0
+      with:
+        scan-type: 'config'
+        hide-progress: false
+        format: 'table'
+        exit-code: '0'
+        scan-ref: '.'
+
+    - name: Scan image with Trivy
+      id: trivy_scan
+      uses: aquasecurity/trivy-action@0.14.0
+      with:
+        image-ref: '${{ inputs.registry }}/${{ inputs.image_name }}:${{ inputs.tag }}'
+        format: 'sarif'
+        output: '${{ inputs.sarif_reports_dir }}/trivy-results.sarif'
+        severity: '${{ inputs.trivy_severity }}'
+        exit-code: '0'
+        ignore-unfixed: true
+
+    - name: Upload Trivy SARIF report
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: '${{ inputs.sarif_reports_dir }}/trivy-results.sarif'
+        category: trivy
+
+    - name: Install Grype
+      shell: bash
+      run: |
+        echo "::group::Installing Grype"
+        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+        echo "::endgroup::"
+
+    - name: Scan image with Grype
+      id: grype_scan
+      shell: bash
+      run: |
+        echo "::group::Scanning with Grype"
+        IMAGE_REF="${{ inputs.registry }}/${{ inputs.image_name }}:${{ inputs.tag }}"
+        echo "Scanning image: $IMAGE_REF"
+
+        # Run scan with SARIF output
+        grype "$IMAGE_REF" -o sarif > "${{ inputs.sarif_reports_dir }}/grype-results.sarif"
+
+        # Run again for human-readable output
+        grype "$IMAGE_REF" -o table --only-fixed
+        echo "::endgroup::"
+
+    - name: Upload Grype SARIF report
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: '${{ inputs.sarif_reports_dir }}/grype-results.sarif'
+        category: grype
+
+    - name: Install Snyk
+      shell: bash
+      run: |
+        echo "::group::Installing Snyk"
+        npm install -g snyk
+        echo "::endgroup::"
+
+    - name: Scan with Snyk
+      if: env.SNYK_TOKEN != ''
+      shell: bash
+      run: |
+        echo "::group::Scanning with Snyk"
+        IMAGE_REF="${{ inputs.registry }}/${{ inputs.image_name }}:${{ inputs.tag }}"
+        echo "Scanning image: $IMAGE_REF"
+
+        # Run Snyk container test
+        snyk container test "$IMAGE_REF" --json > "${{ inputs.sarif_reports_dir }}/snyk-results.json" || true
+
+        # Convert to SARIF if needed
+        snyk-to-html -i "${{ inputs.sarif_reports_dir }}/snyk-results.json" -o "${{ inputs.sarif_reports_dir }}/snyk-results.html" || true
+        echo "::endgroup::"
+      env:
+        SNYK_TOKEN: ${{ github.server_url == 'https://github.com' && secrets.SNYK_TOKEN || '' }}
+
+    - name: Check for critical vulnerabilities
+      shell: bash
+      run: |
+        echo "::group::Checking for critical vulnerabilities"
+        IMAGE_REF="${{ inputs.registry }}/${{ inputs.image_name }}:${{ inputs.tag }}"
+
+        # Parse Trivy results to check for critical vulnerabilities
+        if grep -q "Severity: ${{ inputs.fail_on }}" "${{ inputs.sarif_reports_dir }}/trivy-results.sarif"; then
+          echo "::warning::Found ${{ inputs.fail_on }} severity vulnerabilities in Trivy scan!"
+          CRITICAL_FOUND=true
+        else
+          echo "No ${{ inputs.fail_on }} severity vulnerabilities found in Trivy scan."
+        fi
+
+        # Parse Grype results
+        if grep -q "\"severity\": \"${{ inputs.fail_on }}\"" "${{ inputs.sarif_reports_dir }}/grype-results.sarif"; then
+          echo "::warning::Found ${{ inputs.fail_on }} severity vulnerabilities in Grype scan!"
+          CRITICAL_FOUND=true
+        else
+          echo "No ${{ inputs.fail_on }} severity vulnerabilities found in Grype scan."
+        fi
+
+        if [ "$CRITICAL_FOUND" = "true" ]; then
+          echo "::warning::Critical vulnerabilities detected in image: $IMAGE_REF"
+        else
+          echo "No critical vulnerabilities detected that would cause a failure."
+        fi
+        echo "::endgroup::"
+
+    - name: Generate vulnerability summary
+      shell: bash
+      run: |
+        echo "::group::Generating vulnerability summary"
+        IMAGE_REF="${{ inputs.registry }}/${{ inputs.image_name }}:${{ inputs.tag }}"
+
+        # Create summary markdown
+        echo "# Vulnerability Scan Summary" > "${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+        echo "Image: \`$IMAGE_REF\`" >> "${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+        echo "" >> "${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+
+        echo "## Trivy Results" >> "${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+        # Extract vulnerability counts from Trivy
+        TRIVY_CRITICAL=$(grep -o '"CRITICAL": [0-9]*' "${{ inputs.sarif_reports_dir }}/trivy-results.sarif" | awk '{sum += $2} END {print sum}')
+        TRIVY_HIGH=$(grep -o '"HIGH": [0-9]*' "${{ inputs.sarif_reports_dir }}/trivy-results.sarif" | awk '{sum += $2} END {print sum}')
+        TRIVY_MEDIUM=$(grep -o '"MEDIUM": [0-9]*' "${{ inputs.sarif_reports_dir }}/trivy-results.sarif" | awk '{sum += $2} END {print sum}')
+
+        echo "- Critical: ${TRIVY_CRITICAL:-0}" >> "${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+        echo "- High: ${TRIVY_HIGH:-0}" >> "${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+        echo "- Medium: ${TRIVY_MEDIUM:-0}" >> "${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+        echo "" >> "${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+
+        echo "## Grype Results" >> "${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+        # Extract vulnerability counts from Grype
+        GRYPE_CRITICAL=$(grep -o '"severity": "Critical"' "${{ inputs.sarif_reports_dir }}/grype-results.sarif" | wc -l)
+        GRYPE_HIGH=$(grep -o '"severity": "High"' "${{ inputs.sarif_reports_dir }}/grype-results.sarif" | wc -l)
+        GRYPE_MEDIUM=$(grep -o '"severity": "Medium"' "${{ inputs.sarif_reports_dir }}/grype-results.sarif" | wc -l)
+
+        echo "- Critical: $GRYPE_CRITICAL" >> "${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+        echo "- High: $GRYPE_HIGH" >> "${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+        echo "- Medium: $GRYPE_MEDIUM" >> "${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+
+        echo "Vulnerability summary generated at: ${{ inputs.sarif_reports_dir }}/vulnerability-summary.md"
+        echo "::endgroup::"

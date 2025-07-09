@@ -1,0 +1,84 @@
+name: 'Security Scan Container Image'
+description: 'Scans container image for security vulnerabilities'
+inputs:
+  image:
+    description: 'Container image to scan'
+    required: true
+  severity-cutoff:
+    description: 'Minimum severity to report'
+    required: false
+    default: 'high'
+outputs:
+  sarif:
+    description: 'Path to the generated SARIF file'
+    value: ${{ steps.anchore_scan.outputs.sarif }}
+  json:
+    description: 'Path to the generated JSON file'
+    value: ${{ steps.anchore_scan.outputs.json }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      id: trivy_scan
+      continue-on-error: true
+      with:
+        image-ref: ${{ inputs.image }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: success() && steps.trivy_scan.outcome == 'success' && steps.trivy_scan.conclusion == 'success'
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Run Anchore vulnerability scanner
+      uses: anchore/scan-action@v6
+      id: anchore_scan
+      continue-on-error: true
+      with:
+        image: ${{ inputs.image }}
+        fail-build: false
+        severity-cutoff: ${{ inputs.severity-cutoff }}
+        output-format: sarif
+        add-cpes-if-none: true
+
+    - name: Upload Anchore scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: success() && steps.anchore_scan.outcome == 'success' && steps.anchore_scan.conclusion == 'success'
+      with:
+        sarif_file: ${{ steps.anchore_scan.outputs.sarif }}
+        category: "anchore-scan-results"
+
+    - name: Generate vulnerability summary
+      shell: bash
+      if: success() && steps.anchore_scan.outcome == 'success' && steps.anchore_scan.conclusion == 'success'
+      run: |
+        echo "## Container Image Vulnerability Scan Results" >> $GITHUB_STEP_SUMMARY
+
+        if [[ -f "${{ steps.anchore_scan.outputs.sarif }}" ]]; then
+          VULN_COUNT=$(jq -r '.runs[].results | length' ${{ steps.anchore_scan.outputs.sarif }} || echo "0")
+          echo "| Category | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "| -------- | ----- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Vulnerabilities | $VULN_COUNT |" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "$VULN_COUNT" -gt 0 && -f "${{ steps.anchore_scan.outputs.json }}" ]]; then
+            # Count by severity if JSON output is available
+            echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "| -------- | ----- |" >> $GITHUB_STEP_SUMMARY
+
+            for SEV in "Critical" "High" "Medium" "Low" "Negligible"; do
+              # Convert severity to lowercase for jq comparison
+              SEV_LOWER=$(echo $SEV | tr '[:upper:]' '[:lower:]')
+              # Count vulnerabilities by severity
+              COUNT=$(jq -r '.matches[] | select(.vulnerability.severity | ascii_downcase == "'$SEV_LOWER'") | .vulnerability.id' \
+                ${{ steps.anchore_scan.outputs.json }} 2>/dev/null | wc -l || echo "0")
+              echo "| $SEV | $COUNT |" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
+        else
+          echo "No vulnerability data available" >> $GITHUB_STEP_SUMMARY
+        fi
