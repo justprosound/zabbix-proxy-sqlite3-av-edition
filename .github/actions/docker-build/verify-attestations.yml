@@ -42,7 +42,8 @@ runs:
         echo "### SBOM Attestation" >> $GITHUB_STEP_SUMMARY
         if cosign verify-attestation --type cyclonedx \
            "$IMAGE_REF" \
-           --certificate-identity-regexp "https://github.com/docker/build-push-action" | grep -q "Verification succeeded"; then
+           --certificate-identity-regexp "https://github.com/docker/build-push-action" \
+           --certificate-oidc-issuer-regexp "https://token.actions.githubusercontent.com" | grep -q "Verification succeeded"; then
           echo ":white_check_mark: SBOM attestation verified" >> $GITHUB_STEP_SUMMARY
           SBOM_VERIFIED=true
         else
@@ -53,7 +54,8 @@ runs:
         echo "### Provenance Attestation (SLSA)" >> $GITHUB_STEP_SUMMARY
         if cosign verify-attestation --type slsaprovenance \
            "$IMAGE_REF" \
-           --certificate-identity-regexp "https://github.com/docker/build-push-action" | grep -q "Verification succeeded"; then
+           --certificate-identity-regexp "https://github.com/docker/build-push-action" \
+           --certificate-oidc-issuer-regexp "https://token.actions.githubusercontent.com" | grep -q "Verification succeeded"; then
           echo ":white_check_mark: Provenance attestation verified with mode=max" >> $GITHUB_STEP_SUMMARY
           echo ":information_source: This means your image includes detailed build information that can be verified." >> $GITHUB_STEP_SUMMARY
           PROVENANCE_VERIFIED=true
