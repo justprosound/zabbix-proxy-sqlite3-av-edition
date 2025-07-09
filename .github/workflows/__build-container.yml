@@ -1030,7 +1030,6 @@ jobs:
                 echo "💡 **Recommendation**: Check GitHub API validation requirements or enable write permissions for dependency_graph" >> $GITHUB_STEP_SUMMARY
                 echo "📝 **Note**: Versions might have different SBOM compatibility requirements. See the debug artifact for details." >> $GITHUB_STEP_SUMMARY
                 ;;
-                ;;
               8)
                 echo "💡 **Recommendation**: Ensure SBOM is in CycloneDX format" >> $GITHUB_STEP_SUMMARY
                 ;;
