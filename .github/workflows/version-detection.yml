@@ -1,4 +1,4 @@
-name: ◆ reusable | Version Detection
+name: 'Version Detection'
 
 on:
   workflow_call:
