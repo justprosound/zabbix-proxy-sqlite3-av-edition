@@ -1,0 +1,113 @@
+name: 'Generate Release Notes'
+description: 'Generates comprehensive release notes for GitHub releases'
+inputs:
+  local_version:
+    description: 'Local version with patch increment if needed'
+    required: true
+  zabbix_version:
+    description: 'Upstream Zabbix version'
+    required: true
+  major_minor:
+    description: 'Major.minor version series'
+    required: true
+  is_local_change:
+    description: 'Whether this build includes local changes'
+    required: true
+  is_lts:
+    description: 'Whether this is an LTS version'
+    required: false
+    default: 'false'
+  should_tag_latest:
+    description: 'Whether this version should receive the latest tag'
+    required: false
+    default: 'false'
+  registry:
+    description: 'Container registry used'
+    required: true
+  image_name:
+    description: 'Image name'
+    required: true
+  owner:
+    description: 'Repository owner'
+    required: true
+outputs:
+  release_notes:
+    description: 'Path to the generated release notes file'
+    value: 'release_notes.md'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Generate release notes
+      shell: bash
+      run: |
+        LOCAL_VERSION="${{ inputs.local_version }}"
+        BASE_VERSION="${{ inputs.zabbix_version }}"
+        MAJOR_MINOR="${{ inputs.major_minor }}"
+        IS_LTS="${{ inputs.is_lts }}"
+        IS_LOCAL_CHANGE="${{ inputs.is_local_change }}"
+        SHOULD_TAG_LATEST="${{ inputs.should_tag_latest }}"
+
+        cat > release_notes.md << EOF
+        # Zabbix Proxy SQLite3 AV Edition - v$LOCAL_VERSION
+
+        This release is based on the official Zabbix Proxy SQLite3 v$BASE_VERSION with additional tools and features tailored for AV system monitoring.
+
+        ## 🔍 Key Features
+
+        - **Network Testing**: Includes ping, traceroute, mtr, fping, nmap, and other network diagnostics
+        - **Speed Testing**: Dual implementation with both Cloudflare and Ookla Speedtest
+        - **SNMP Support**: Full SNMP toolkit for monitoring SNMP-enabled devices
+        - **Kubernetes Support**: Includes kubectl for container orchestration monitoring
+        - **Custom Monitoring Scripts**: Specialized tools for AV environments
+        - **Multiple Tags**: Supports flexible versioning including $(if [ "$IS_LTS" = "true" ]; then echo "LTS"; fi) support
+
+        ## 🏷️ Container Information
+
+        ### 🔄 Pull Instructions
+        ```bash
+        # Pull this specific version
+        docker pull ${{ inputs.registry }}/${{ inputs.owner }}/${{ inputs.image_name }}:$LOCAL_VERSION
+        ```
+
+        ### 📋 Container Metadata
+        This image includes comprehensive OCI metadata for reproducible builds:
+        - **Title**: Zabbix Proxy SQLite3 for AV Systems
+        - **Version**: $LOCAL_VERSION
+        - **Created**: $(date -u +'%Y-%m-%d %H:%M UTC')
+        - **Source**: ${{ github.server_url }}/${{ github.repository }}
+        - **Revision**: Full git commit SHA
+        - **Documentation**: README.md in repository
+        - **License**: AGPL-3.0
+
+        ### 🏷️ Available Tags
+        - \`${LOCAL_VERSION}\` - This specific version
+        - \`${MAJOR_MINOR}\` - Latest patch for this major.minor
+        $(if [ "$IS_LOCAL_CHANGE" = "false" ]; then echo "- \`${BASE_VERSION}\` - Upstream Zabbix version"; fi)
+        $(if [ "$IS_LTS" = "true" ]; then echo "- \`lts\` - Long-Term Support version"; fi)
+        $(if [ "$SHOULD_TAG_LATEST" = "true" ]; then echo "- \`latest\` - Latest version with highest version number"; fi)
+
+        ### 🔒 Immutability Guarantee
+        - Images are never modified after creation
+        - Each version has a unique, immutable tag
+        - Container itself is never modified after creation
+
+        ### 🛠️ Container Features
+        - **Network Monitoring**: ping, traceroute, mtr, fping, nmap, netcat
+        - **SNMP Support**: Full SNMP toolkit with MIB support
+        - **Kubernetes**: kubectl for container orchestration monitoring
+        - **Speed Testing**: Dual implementation (Cloudflare Speedtest & Ookla Speedtest CLI)
+        - **Custom Scripts**: AV-specific monitoring utilities
+
+        ### 📊 Security Assets
+        - **SBOMs**: This release includes Software Bill of Materials files for security scanning
+        - **Security Scans**: Multiple vulnerability scans performed during build
+        - **Results available in GitHub Security tab**
+
+        ### 📥 Container Images
+        To use this container, pull the image from GitHub Container Registry:
+
+        ```bash
+        docker pull ${{ inputs.registry }}/${{ inputs.owner }}/${{ inputs.image_name }}:$LOCAL_VERSION
+        ```
+        EOF

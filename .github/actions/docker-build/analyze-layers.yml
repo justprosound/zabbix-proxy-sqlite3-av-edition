@@ -1,0 +1,86 @@
+name: 'Analyze Docker Image Layers'
+description: 'Analyzes Docker image layers and generates a report'
+inputs:
+  image_name:
+    description: 'Full name of the Docker image (repository/image)'
+    required: true
+  tag:
+    description: 'Tag of the Docker image'
+    required: true
+  registry:
+    description: 'Container registry where the image is stored'
+    required: true
+    default: 'ghcr.io'
+  output_dir:
+    description: 'Directory to output layer analysis reports'
+    required: false
+    default: 'layer-analysis'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Docker layer analysis tools
+      shell: bash
+      run: |
+        echo "::group::Installing Docker layer analysis tools"
+        # Install dive
+        DIVE_VERSION=0.10.0
+        wget -q https://github.com/wagoodman/dive/releases/download/v${DIVE_VERSION}/dive_${DIVE_VERSION}_linux_amd64.deb
+        sudo dpkg -i dive_${DIVE_VERSION}_linux_amd64.deb
+
+        # Install container-diff
+        CONTAINER_DIFF_VERSION=0.17.0
+        wget -q https://storage.googleapis.com/container-diff/v${CONTAINER_DIFF_VERSION}/container-diff-linux-amd64
+        chmod +x container-diff-linux-amd64
+        sudo mv container-diff-linux-amd64 /usr/local/bin/container-diff
+        echo "::endgroup::"
+
+    - name: Create output directory
+      shell: bash
+      run: mkdir -p "${{ inputs.output_dir }}"
+
+    - name: Analyze image layers with dive
+      shell: bash
+      run: |
+        echo "::group::Analyzing image layers with dive"
+        IMAGE_REF="${{ inputs.registry }}/${{ inputs.image_name }}:${{ inputs.tag }}"
+        echo "Analyzing: $IMAGE_REF"
+
+        dive --json "${{ inputs.output_dir }}/dive-analysis.json" "$IMAGE_REF"
+
+        # Generate a text summary report
+        echo "## Docker Layer Analysis" > "${{ inputs.output_dir }}/layer-analysis.md"
+        echo "Image: \`$IMAGE_REF\`" >> "${{ inputs.output_dir }}/layer-analysis.md"
+        echo "" >> "${{ inputs.output_dir }}/layer-analysis.md"
+        echo "### Layer Information" >> "${{ inputs.output_dir }}/layer-analysis.md"
+
+        # Extract summary data from dive json
+        echo "\`\`\`" >> "${{ inputs.output_dir }}/layer-analysis.md"
+        cat "${{ inputs.output_dir }}/dive-analysis.json" | jq -r '.layers[] | "Layer: \(.id) - Size: \(.sizeBytes) bytes - Command: \(.command)"' >> "${{ inputs.output_dir }}/layer-analysis.md"
+        echo "\`\`\`" >> "${{ inputs.output_dir }}/layer-analysis.md"
+        echo "::endgroup::"
+
+    - name: Analyze package differences with container-diff
+      shell: bash
+      run: |
+        echo "::group::Analyzing package differences"
+        IMAGE_REF="${{ inputs.registry }}/${{ inputs.image_name }}:${{ inputs.tag }}"
+
+        # Extract base image from Dockerfile
+        BASE_IMAGE=$(grep -m 1 "FROM" Dockerfile | cut -d ' ' -f 2)
+
+        echo "Comparing $IMAGE_REF with base image $BASE_IMAGE"
+
+        container-diff analyze --type=apt --type=file --json "$IMAGE_REF" > "${{ inputs.output_dir }}/container-diff-analysis.json"
+
+        # Add to markdown report
+        echo "" >> "${{ inputs.output_dir }}/layer-analysis.md"
+        echo "### Package Differences" >> "${{ inputs.output_dir }}/layer-analysis.md"
+        echo "\`\`\`" >> "${{ inputs.output_dir }}/layer-analysis.md"
+        cat "${{ inputs.output_dir }}/container-diff-analysis.json" | jq -r '.Analysis[0].Analysis | .[] | "\(.Name) \(.Version)"' | head -20 >> "${{ inputs.output_dir }}/layer-analysis.md"
+        PACKAGE_COUNT=$(cat "${{ inputs.output_dir }}/container-diff-analysis.json" | jq -r '.Analysis[0].Analysis | length')
+        echo "... and $(($PACKAGE_COUNT - 20)) more packages" >> "${{ inputs.output_dir }}/layer-analysis.md"
+        echo "\`\`\`" >> "${{ inputs.output_dir }}/layer-analysis.md"
+        echo "::endgroup::"
+
+        echo "Layer analysis complete. Reports available in ${{ inputs.output_dir }}/"

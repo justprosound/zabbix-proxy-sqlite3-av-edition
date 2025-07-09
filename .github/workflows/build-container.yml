@@ -1,0 +1,172 @@
+name: 'Build and Publish Container'
+
+on:
+  workflow_call:
+    inputs:
+      zabbix_version:
+        required: true
+        type: string
+      major_minor:
+        required: true
+        type: string
+      is_lts:
+        required: false
+        type: string
+        default: 'false'
+        description: "Whether this is an LTS version (as a string 'true' or 'false')"
+      latest_version:
+        required: true
+        type: string
+        description: "The highest Zabbix version number (e.g., 7.2.7 > 7.0.13)"
+    outputs:
+      release_id:
+        description: "Created GitHub Release ID"
+        value: ${{ jobs.build-container.outputs.release_id }}
+      release_tag:
+        description: "Created GitHub Release Tag"
+        value: ${{ jobs.build-container.outputs.release_tag }}
+
+jobs:
+  build-container:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: write
+      id-token: write
+      actions: read
+      security-events: write
+    outputs:
+      release_id: ${{ steps.github-release.outputs.id }}
+      release_tag: ${{ steps.version-management.outputs.local_version }}
+    env:
+      # Default image name
+      IMAGE_NAME: 'zabbix-proxy-sqlite3-av-edition'
+      # Define the base name for documentation
+      BASE_NAME: 'Zabbix Proxy SQLite3 AV Edition'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Step 1: Analyze repository
+      - name: Analyze repository
+        id: repo-analysis
+        uses: ./.github/actions/repo-analysis
+        with:
+          image-name: ${{ env.IMAGE_NAME }}
+
+      # Step 2: Login to GitHub Container Registry
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 3: Setup Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=moby/buildkit:latest
+
+      # Step 4: Check upstream image
+      - name: Check upstream image
+        id: upstream-check
+        uses: ./.github/actions/upstream-image-check
+        with:
+          zabbix_version: ${{ inputs.zabbix_version }}
+
+      # Step 5: Version management
+      - name: Version management
+        id: version-management
+        uses: ./.github/actions/version-management
+        with:
+          zabbix_version: ${{ inputs.zabbix_version }}
+          major_minor: ${{ inputs.major_minor }}
+          is_lts: ${{ inputs.is_lts }}
+          latest_version: ${{ inputs.latest_version }}
+
+      # Step 6: Security scan Dockerfile
+      - name: Scan Dockerfile
+        id: dockerfile-scan
+        uses: ./.github/actions/security-scan/dockerfile-scan
+        if: steps.upstream-check.outputs.upstream_exists != 'false'
+
+      # Step 7: Build and push images
+      - name: Build and push images
+        id: docker-build
+        uses: ./.github/actions/docker-build
+        if: steps.upstream-check.outputs.upstream_exists != 'false'
+        with:
+          registry: ${{ steps.repo-analysis.outputs.registry }}
+          image_name: ${{ steps.repo-analysis.outputs.image_name }}
+          zabbix_version: ${{ inputs.zabbix_version }}
+          major_minor: ${{ inputs.major_minor }}
+          local_version: ${{ steps.version-management.outputs.local_version }}
+          is_local_change: ${{ steps.version-management.outputs.is_local_change }}
+          is_lts: ${{ steps.version-management.outputs.is_lts }}
+          should_tag_latest: ${{ steps.version-management.outputs.should_tag_latest }}
+          timestamp: ${{ steps.repo-analysis.outputs.timestamp }}
+
+      # Step 8: Security scan container
+      - name: Scan container
+        id: container-scan
+        uses: ./.github/actions/security-scan/container-scan
+        if: steps.upstream-check.outputs.upstream_exists != 'false' && steps.docker-build.outcome == 'success'
+        with:
+          registry: ${{ steps.repo-analysis.outputs.registry }}
+          image_name: ${{ steps.repo-analysis.outputs.image_name }}
+          version: ${{ steps.version-management.outputs.local_version }}
+
+      # Step 9: Generate SBOM
+      - name: Generate SBOM
+        id: sbom-generation
+        uses: ./.github/actions/sbom-generation
+        if: steps.upstream-check.outputs.upstream_exists != 'false' && steps.docker-build.outcome == 'success'
+        with:
+          registry: ${{ steps.repo-analysis.outputs.registry }}
+          image_name: ${{ steps.repo-analysis.outputs.image_name }}
+          version: ${{ steps.version-management.outputs.local_version }}
+
+      # Step 10: Process dependency snapshot
+      - name: Process dependency snapshot
+        id: dependency-snapshot
+        uses: ./.github/actions/dependency-snapshot
+        if: steps.upstream-check.outputs.upstream_exists != 'false' && steps.sbom-generation.outcome == 'success'
+        with:
+          version: ${{ steps.version-management.outputs.local_version }}
+          zabbix_version: ${{ inputs.zabbix_version }}
+
+      # Step 11: Verify Docker attestations
+      - name: Verify Docker attestations
+        id: docker-attestation
+        uses: ./.github/actions/docker-attestation
+        if: steps.upstream-check.outputs.upstream_exists != 'false' && steps.docker-build.outcome == 'success'
+        with:
+          registry: ${{ steps.repo-analysis.outputs.registry }}
+          image_name: ${{ steps.repo-analysis.outputs.image_name }}
+          version: ${{ steps.version-management.outputs.local_version }}
+
+      # Step 12: Prepare release
+      - name: Prepare release
+        id: release-preparation
+        uses: ./.github/actions/release-preparation
+        if: steps.upstream-check.outputs.upstream_exists != 'false' && steps.docker-build.outcome == 'success'
+        with:
+          local_version: ${{ steps.version-management.outputs.local_version }}
+          zabbix_version: ${{ inputs.zabbix_version }}
+          major_minor: ${{ inputs.major_minor }}
+          is_local_change: ${{ steps.version-management.outputs.is_local_change }}
+          is_lts: ${{ steps.version-management.outputs.is_lts }}
+          should_tag_latest: ${{ steps.version-management.outputs.should_tag_latest }}
+          registry: ${{ steps.repo-analysis.outputs.registry }}
+          image_name: ${{ steps.repo-analysis.outputs.image_name }}
+
+      # Step 13: Create GitHub release
+      - name: Create GitHub release
+        id: github-release
+        uses: ./.github/actions/github-release
+        if: steps.upstream-check.outputs.upstream_exists != 'false' && steps.release-preparation.outcome == 'success'
+        with:
+          version: ${{ steps.version-management.outputs.local_version }}
+          should_tag_latest: ${{ steps.version-management.outputs.should_tag_latest }}
+          assets: ${{ steps.release-preparation.outputs.assets }}

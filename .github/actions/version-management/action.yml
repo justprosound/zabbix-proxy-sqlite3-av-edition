@@ -1,0 +1,146 @@
+name: 'Version Management'
+description: 'Manages version tagging and versioning strategy'
+inputs:
+  zabbix_version:
+    description: 'Zabbix version to build'
+    required: true
+  major_minor:
+    description: 'Major.minor version series'
+    required: true
+  latest_version:
+    description: 'Latest Zabbix version (highest version number)'
+    required: true
+  is_lts:
+    description: 'Whether this is an LTS version (as a string "true" or "false")'
+    required: false
+    default: 'false'
+outputs:
+  local_version:
+    description: 'Local version with patch increment if needed'
+    value: ${{ steps.local_version.outputs.local_version }}
+  is_local_change:
+    description: 'Whether this build includes local changes'
+    value: ${{ steps.local_version.outputs.is_local_change }}
+  should_tag_latest:
+    description: 'Whether this version should receive the latest tag'
+    value: ${{ steps.version_tag_management.outputs.should_tag_latest }}
+  is_lts:
+    description: 'Whether this is an LTS version'
+    value: ${{ steps.version_tag_management.outputs.is_lts }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Get local version with patch increment if needed
+      id: local_version
+      shell: bash
+      run: |
+        ZABBIX_VERSION="${{ inputs.zabbix_version }}"
+
+        # Initialize values - use base version until determined otherwise
+        LOCAL_VERSION="$ZABBIX_VERSION"
+        IS_LOCAL_CHANGE=false
+
+        # Check if there are existing tags for this version
+        git fetch --tags
+        EXISTING_TAGS=$(git tag -l "$ZABBIX_VERSION*" | sort -V)
+        echo "Found existing tags: $EXISTING_TAGS"
+
+        # Check for local modifications since the last tag
+        LAST_TAG=$(echo "$EXISTING_TAGS" | tail -n 1)
+        if [[ -n "$LAST_TAG" ]]; then
+          echo "Last tag for this version: $LAST_TAG"
+
+          # Check if Dockerfile or scripts have changed
+          CHANGED_FILES=$(git diff --name-only $LAST_TAG HEAD -- Dockerfile scripts)
+          if [[ -n "$CHANGED_FILES" ]]; then
+            echo "Local changes detected since last build:"
+            echo "$CHANGED_FILES"
+
+            # Get the highest N value from existing X.Y.Z.N tags
+            HIGHEST_N=0
+            for TAG in $EXISTING_TAGS; do
+              if [[ $TAG =~ ^${ZABBIX_VERSION}\.[0-9]+$ ]]; then
+                N_VALUE=$(echo "$TAG" | cut -d. -f4)
+                if [[ $N_VALUE -gt $HIGHEST_N ]]; then
+                  HIGHEST_N=$N_VALUE
+                fi
+              fi
+            done
+
+            # Increment N for the new local version
+            NEW_N=$(($HIGHEST_N + 1))
+            LOCAL_VERSION="$ZABBIX_VERSION.$NEW_N"
+            IS_LOCAL_CHANGE=true
+
+            echo "Using local version: $LOCAL_VERSION due to detected changes"
+          fi
+        fi
+
+        # Set outputs
+        echo "local_version=$LOCAL_VERSION" >> $GITHUB_OUTPUT
+        echo "is_local_change=$IS_LOCAL_CHANGE" >> $GITHUB_OUTPUT
+
+        # Add to step summary
+        echo "## Version Information" >> $GITHUB_STEP_SUMMARY
+        echo "| Description | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "| ----------- | ----- |" >> $GITHUB_STEP_SUMMARY
+        echo "| Upstream Zabbix Version | $ZABBIX_VERSION |" >> $GITHUB_STEP_SUMMARY
+        echo "| Local Version | $LOCAL_VERSION |" >> $GITHUB_STEP_SUMMARY
+        echo "| Local Changes | $IS_LOCAL_CHANGE |" >> $GITHUB_STEP_SUMMARY
+
+    - name: Version tag management
+      id: version_tag_management
+      shell: bash
+      run: |
+        ZABBIX_VERSION="${{ inputs.zabbix_version }}"
+        MAJOR_MINOR="${{ inputs.major_minor }}"
+        LATEST_VERSION="${{ inputs.latest_version }}"
+
+        echo "Current version: $ZABBIX_VERSION"
+        echo "Major.minor series: $MAJOR_MINOR"
+        echo "Latest version (highest overall): $LATEST_VERSION"
+
+        # Default values
+        SHOULD_TAG_LATEST="false"
+
+        # Check if this is the highest version overall - only this one gets the 'latest' tag
+        if [ "$ZABBIX_VERSION" == "$LATEST_VERSION" ]; then
+          echo "✅ This is the highest version overall ($ZABBIX_VERSION) - will apply 'latest' tag"
+          SHOULD_TAG_LATEST="true"
+        else
+          echo "❌ Not the highest version overall (which is $LATEST_VERSION) - will NOT apply 'latest' tag"
+        fi
+
+        # Set output values for use in later steps
+        echo "should_tag_latest=$SHOULD_TAG_LATEST" >> $GITHUB_OUTPUT
+
+        # Determine if this is an LTS version
+        IS_LTS="${{ inputs.is_lts }}"
+
+        if [ "$IS_LTS" == "true" ]; then
+          echo "✅ This is an LTS version ($MAJOR_MINOR series) - will apply 'lts' tag"
+          echo "is_lts=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Not an LTS version - will NOT apply 'lts' tag"
+          echo "is_lts=false" >> $GITHUB_OUTPUT
+        fi
+
+        # Add information to step summary
+        echo "## 🏷️ Version Tag Management" >> $GITHUB_STEP_SUMMARY
+        echo "| Version Type | Value | Tag Status |" >> $GITHUB_STEP_SUMMARY
+        echo "| ------------ | ----- | ---------- |" >> $GITHUB_STEP_SUMMARY
+        echo "| Current Version | $ZABBIX_VERSION | Will tag as \`$ZABBIX_VERSION\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| Major.Minor | $MAJOR_MINOR | Will tag as \`$MAJOR_MINOR\` |" >> $GITHUB_STEP_SUMMARY
+
+        if [ "$SHOULD_TAG_LATEST" == "true" ]; then
+          echo "| Latest | $LATEST_VERSION | ✅ Will tag as \`latest\` (highest version overall) |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Latest | $LATEST_VERSION | ❌ Will NOT tag as \`latest\` (reserved for $LATEST_VERSION) |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        if [ "$IS_LTS" == "true" ]; then
+          echo "| LTS | $MAJOR_MINOR | ✅ Will tag as \`lts\` (LTS version) |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| LTS | N/A | ❌ Will NOT tag as \`lts\` (not an LTS version) |" >> $GITHUB_STEP_SUMMARY
+        fi

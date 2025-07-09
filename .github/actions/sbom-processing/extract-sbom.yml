@@ -1,0 +1,139 @@
+name: 'Extract SBOM from Container'
+description: 'Extracts SBOM from a built container image'
+inputs:
+  image:
+    description: 'Full image reference including tag'
+    required: true
+  version:
+    description: 'Version tag for the SBOM file'
+    required: true
+outputs:
+  sbom_file:
+    description: 'Path to the extracted SBOM file'
+    value: ${{ steps.set_outputs.outputs.sbom_file }}
+  status:
+    description: 'Status of SBOM extraction (success or failure)'
+    value: ${{ steps.set_outputs.outputs.status }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Extract SBOM from container
+      id: extract_sbom
+      shell: bash
+      continue-on-error: true
+      run: |
+        # Set up image reference for extraction
+        IMAGE_TAG="${{ inputs.image }}"
+        SBOM_FILE="zabbix-proxy-sbom-${{ inputs.version }}.txt"
+        CONTAINER_ID=$(docker create $IMAGE_TAG)
+
+        # Extract SBOM file and validate container image
+        echo "## Container Image Validation" >> $GITHUB_STEP_SUMMARY
+        EXTRACTION_SUCCESS=false
+
+        if [ -n "$CONTAINER_ID" ]; then
+          # First check if the SBOM exists
+          if docker cp $CONTAINER_ID:/etc/zabbix-proxy-sbom.txt $SBOM_FILE 2>/dev/null; then
+            echo ":white_check_mark: SBOM extracted successfully from container" >> $GITHUB_STEP_SUMMARY
+            EXTRACTION_SUCCESS=true
+          else
+            echo ":warning: SBOM not found in container" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Check for built-in OCI labels
+          echo "### OCI Label Verification" >> $GITHUB_STEP_SUMMARY
+
+          # Get labels from container
+          FORMAT='{{ json .Config.Labels }}'
+          docker inspect $IMAGE_TAG --format="$FORMAT" | jq . > image_labels.json
+
+          # Check for required OCI labels
+          REQUIRED_LABELS=(
+            "org.opencontainers.image.title"
+            "org.opencontainers.image.description"
+            "org.opencontainers.image.version"
+            "org.opencontainers.image.source"
+            "org.opencontainers.image.revision"
+            "org.opencontainers.image.created"
+            "org.opencontainers.image.licenses"
+            "org.opencontainers.image.url"
+            "org.zabbix.upstream.version"
+          )
+
+          for LABEL in "${REQUIRED_LABELS[@]}"; do
+            if grep -q "\"$LABEL\":" image_labels.json; then
+              VALUE=$(jq -r ".[\"$LABEL\"]" image_labels.json)
+              echo ":white_check_mark: $LABEL: $VALUE" >> $GITHUB_STEP_SUMMARY
+            else
+              echo ":x: Required label missing: $LABEL" >> $GITHUB_STEP_SUMMARY
+              echo "::warning::Required OCI label missing: $LABEL"
+            fi
+          done
+
+          # Clean up container
+          docker rm $CONTAINER_ID > /dev/null
+        else
+          echo ":x: Failed to create container for SBOM extraction" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # If extraction was successful, validate the SBOM file content
+        if [ "$EXTRACTION_SUCCESS" = "true" ]; then
+          echo "## SBOM Validation" >> $GITHUB_STEP_SUMMARY
+
+          # Check if the file exists
+          if [ ! -f "$SBOM_FILE" ]; then
+            echo ":x: SBOM file not found: $SBOM_FILE" >> $GITHUB_STEP_SUMMARY
+            echo "::warning::SBOM file not found: $SBOM_FILE"
+            EXTRACTION_SUCCESS=false
+          else
+            # Check for required tools in the SBOM
+            REQUIRED_TOOLS=(zabbix-proxy-sqlite3 kubectl jq nmap fping mtr traceroute iproute2 snmpwalk curl wget expect jo nano gnupg tcpdump netcat)
+
+            # Check either Ookla speedtest or Cloudflare speedtest
+            if grep -q "^ookla-speedtest:" "$SBOM_FILE" || grep -q "^cloudflare-speedtest:" "$SBOM_FILE"; then
+              echo ":white_check_mark: At least one speedtest implementation found" >> $GITHUB_STEP_SUMMARY
+            else
+              echo ":x: No speedtest implementation found" >> $GITHUB_STEP_SUMMARY
+              MISSING=1
+            fi
+
+            MISSING=0
+
+            echo "### SBOM Contents" >> $GITHUB_STEP_SUMMARY
+            cat "$SBOM_FILE" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            echo "### Validation Results" >> $GITHUB_STEP_SUMMARY
+            for TOOL in "${REQUIRED_TOOLS[@]}"; do
+              if ! grep -q "^$TOOL:" "$SBOM_FILE"; then
+                echo ":x: $TOOL version not found in SBOM" >> $GITHUB_STEP_SUMMARY
+                MISSING=1
+              elif grep -q "^$TOOL: Not installed properly" "$SBOM_FILE"; then
+                echo ":warning: $TOOL installed but may have issues - $(grep "^$TOOL:" "$SBOM_FILE")" >> $GITHUB_STEP_SUMMARY
+                MISSING=1
+              else
+                VERSION=$(grep "^$TOOL:" "$SBOM_FILE" | sed 's/^[^:]*: //')
+                echo ":white_check_mark: $TOOL version found: $VERSION" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+
+            if [ "$MISSING" -eq 1 ]; then
+              echo "::warning::Some required tools are missing from the SBOM or have installation issues. See summary for details."
+            else
+              echo "All required tools are present in the SBOM."
+            fi
+          fi
+        fi
+
+    - name: Set outputs
+      id: set_outputs
+      shell: bash
+      run: |
+        if [ -f "zabbix-proxy-sbom-${{ inputs.version }}.txt" ]; then
+          echo "sbom_file=zabbix-proxy-sbom-${{ inputs.version }}.txt" >> $GITHUB_OUTPUT
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "sbom_file=" >> $GITHUB_OUTPUT
+          echo "status=failure" >> $GITHUB_OUTPUT
+        fi

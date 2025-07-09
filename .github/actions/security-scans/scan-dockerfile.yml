@@ -1,0 +1,60 @@
+name: 'Security Scan Dockerfile'
+description: 'Scans Dockerfile for security vulnerabilities'
+inputs:
+  path:
+    description: 'Path to scan'
+    required: false
+    default: '.'
+outputs:
+  sarif:
+    description: 'Path to the generated SARIF file'
+    value: ${{ steps.dockerfile_scan.outputs.sarif }}
+  has_vulnerabilities:
+    description: 'Whether vulnerabilities were found'
+    value: ${{ steps.vuln_summary.outputs.has_vulnerabilities }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run Anchore scan-action on Dockerfile
+      id: dockerfile_scan
+      uses: anchore/scan-action@v6
+      continue-on-error: true
+      with:
+        path: ${{ inputs.path }}
+        fail-build: false
+        severity-cutoff: high
+        output-format: sarif
+
+    - name: Upload Dockerfile scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: success() && steps.dockerfile_scan.outcome == 'success' && steps.dockerfile_scan.conclusion == 'success'
+      with:
+        sarif_file: ${{ steps.dockerfile_scan.outputs.sarif }}
+        category: "dockerfile-vulnerabilities"
+
+    - name: Generate vulnerability summary
+      id: vuln_summary
+      shell: bash
+      if: success() && steps.dockerfile_scan.outcome == 'success' && steps.dockerfile_scan.conclusion == 'success'
+      run: |
+        echo "## Dockerfile Vulnerability Scan Results" >> $GITHUB_STEP_SUMMARY
+        HAS_VULNERABILITIES="false"
+
+        if [[ -f "${{ steps.dockerfile_scan.outputs.sarif }}" ]]; then
+          VULN_COUNT=$(jq -r '.runs[].results | length' ${{ steps.dockerfile_scan.outputs.sarif }} || echo "0")
+          echo "| Category | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "| -------- | ----- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Vulnerabilities | $VULN_COUNT |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "::warning::Found $VULN_COUNT potential security vulnerabilities in Dockerfile"
+            HAS_VULNERABILITIES="true"
+          else
+            echo "✅ No vulnerabilities found in Dockerfile" >> $GITHUB_STEP_SUMMARY
+          fi
+        else
+          echo "No vulnerability data available" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        echo "has_vulnerabilities=$HAS_VULNERABILITIES" >> $GITHUB_OUTPUT
