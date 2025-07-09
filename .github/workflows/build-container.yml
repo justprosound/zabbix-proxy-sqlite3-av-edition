@@ -307,7 +307,6 @@ jobs:
           push: false
           provenance: mode=max
           sbom: true
-          platforms: linux/amd64
           outputs: type=docker
           file: ./Dockerfile
           secrets: |
