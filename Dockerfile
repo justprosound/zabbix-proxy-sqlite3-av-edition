@@ -1,7 +1,7 @@
 # Base Zabbix proxy image with SQLite3
 # Global hadolint ignore directives
 # hadolint global ignore=DL3003,DL3008,DL4001,DL3047,SC2015,SC2016
-ARG ZABBIX_VERSION=ubuntu-7.4.0
+ARG ZABBIX_VERSION=ubuntu-7.4.1
 FROM zabbix/zabbix-proxy-sqlite3:${ZABBIX_VERSION}
 
 # Switch to root for installation tasks
