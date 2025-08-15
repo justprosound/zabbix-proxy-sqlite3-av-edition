@@ -756,7 +756,9 @@ jobs:
                       "buildTarget": $version,
                       "zabbixVersion": $zabbix_version
                     },
-                    "manifests": $sbom
+                    "manifests": {
+                      "zabbix-proxy.cdx.json": $sbom[0]
+                    }
                   }' > dependency-snapshot.json
 
                 # Save dependency snapshot for diagnostics
@@ -948,7 +950,8 @@ jobs:
                           "sha": $sha,
                           "ref": $ref,
                           "detector": $detector,
-                          "manifests": [{
+                        "manifests": {
+                          "zabbix-proxy-minimal.json": {
                             "name": "zabbix-proxy",
                             "version": $version,
                             "bom": {
@@ -960,7 +963,7 @@ jobs:
                                   "name": "zabbix-proxy-sqlite3",
                                   "version": $version
                                 }
-                              },
+                                },
                               "components": [
                                 {
                                   "type": "library",
@@ -974,7 +977,8 @@ jobs:
                                 }
                               ]
                             }
-                          }]
+                            }
+                        }
                         }' > minimal-snapshot.json
 
                       # Save for diagnostics
