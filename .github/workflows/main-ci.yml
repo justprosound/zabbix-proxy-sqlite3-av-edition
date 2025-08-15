@@ -60,20 +60,17 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Read MIBs configuration
-        id: read_config
-        run: |
-          echo "Reading MIBs configuration from mibs.json..."
-          if [ ! -f "mibs/mibs.json" ]; then
-            echo "Error: mibs/mibs.json not found"
-            exit 1
-          fi
-          MIB_COUNT=$(jq '.mibs | length' mibs/mibs.json)
-          echo "Found $MIB_COUNT MIB entries to process"
-          echo "mib_count=$MIB_COUNT" >> $GITHUB_OUTPUT
+      - name: Cache MIBs
+        id: cache-mibs
+        uses: actions/cache@v4
+        with:
+          path: mibs
+          key: ${{ runner.os }}-mibs-${{ hashFiles('mibs/mibs.json') }}
+          restore-keys: |
+            ${{ runner.os }}-mibs-
 
       - name: Download MIBs
-        id: download
+        if: steps.cache-mibs.outputs.cache-hit != 'true'
         run: |
           # Initialize counters
           DOWNLOADED=0

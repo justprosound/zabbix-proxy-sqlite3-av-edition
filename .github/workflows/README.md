@@ -2,7 +2,7 @@
 
 ## Active Workflows
 
-### main-ci.yml (Primary Workflow)
+### ci-release.yml (Primary Workflow)
 
 This is the primary workflow for this repository. It handles:
 
@@ -50,7 +50,7 @@ Reusable workflows:
 ### Workflow Architecture
 
 ```
-main-ci.yml (orchestrator)
+ci-release.yml (orchestrator)
   ↓
   ├─ __version-detection.yml
   ├─ __check-changes.yml
