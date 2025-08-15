@@ -48,98 +48,14 @@ jobs:
       # Define the base name for documentation
       BASE_NAME: ${{ vars.BASE_NAME || 'Zabbix Proxy SQLite3 AV Edition' }}
     steps:
-      - uses: actions/checkout@v4
-
-      # Security: Verify checkout integrity
-      - name: Verify repository integrity
-        run: |
-          echo "Verifying repository state..."
-          git fsck --no-progress --no-dangling
-          echo "Repository integrity check passed"
-
-      # Analyze repository and determine appropriate image name
-      - name: Determine repository and image names
-        id: repo_analysis
-        run: |
-          # Get actual repository name from github.repository
-          ACTUAL_REPO="${{ github.repository }}"
-          ACTUAL_REPO_NAME="${ACTUAL_REPO#*/}"
-          REPO_OWNER="${{ github.repository_owner }}"
-
-          echo "Repository: $ACTUAL_REPO"
-          echo "Repository Owner: $REPO_OWNER"
-          echo "Repository Name: $ACTUAL_REPO_NAME"
-
-          # Check if we need to adjust the image name based on repo name
-          IMAGE_NAME="${{ env.IMAGE_NAME }}"
-
-          # Default registry - hardcode to ghcr.io for security
-          REGISTRY="ghcr.io"
-
-          if [[ "$ACTUAL_REPO_NAME" != "zabbix-proxy-sqlite3-av-edition" ]]; then
-            echo "Repository name differs from default template"
-            # Try to extract a meaningful name - remove common prefixes/suffixes
-            CLEANED_NAME=$(echo "$ACTUAL_REPO_NAME" | sed -E 's/(zabbix|proxy|sqlite|edition|av)[-_]?//gi' | sed -E 's/[-_]?(zabbix|proxy|sqlite|edition|av)//gi')
-            # If we have a cleaned name that's different and not empty, use it as a prefix
-            if [[ -n "$CLEANED_NAME" && "$CLEANED_NAME" != "$ACTUAL_REPO_NAME" && "$CLEANED_NAME" != "-" ]]; then
-              # Only add prefix if it makes sense
-              if [[ "$IMAGE_NAME" != *"$CLEANED_NAME"* ]]; then
-                IMAGE_NAME="${CLEANED_NAME}-${IMAGE_NAME}"
-                echo "Adjusted image name to: $IMAGE_NAME"
-              fi
-            fi
-          fi
-
-          echo "Final image name: $IMAGE_NAME"
-          echo "Final registry: $REGISTRY"
-          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-          echo "registry=${REGISTRY}" >> $GITHUB_OUTPUT
-          echo "repo_owner=${REPO_OWNER}" >> $GITHUB_OUTPUT
-          echo "repo_name=${ACTUAL_REPO_NAME}" >> $GITHUB_OUTPUT
-
-      # Generate reproducible build timestamp in ISO-8601 format
-      - name: Generate build timestamp
-        id: build_timestamp
-        run: echo "DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Setup and Verify Build Environment
+        id: setup
+        uses: ./.github/actions/setup-and-verify
         with:
-          driver-opts: image=moby/buildkit:latest
-
-      # Verify that the upstream Zabbix image exists before proceeding
-      - name: Verify upstream Zabbix image exists
-        id: check_upstream_image
-        continue-on-error: true
-        run: |
-          UPSTREAM_IMAGE="zabbix/zabbix-proxy-sqlite3:ubuntu-${{ inputs.zabbix_version }}"
-          echo "Checking if upstream image exists: $UPSTREAM_IMAGE"
-
-          # Attempt to pull the image to verify it exists
-          if docker pull "$UPSTREAM_IMAGE" &>/dev/null; then
-            echo "✅ Upstream image $UPSTREAM_IMAGE exists and is accessible"
-            echo "upstream_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ ERROR: Upstream image $UPSTREAM_IMAGE does not exist or is not accessible"
-            echo "::warning::Upstream image $UPSTREAM_IMAGE not found! Build will likely fail."
-            echo "upstream_exists=false" >> $GITHUB_OUTPUT
-
-            # Add information to step summary
-            echo "## ⚠️ Upstream Image Verification Failed" >> $GITHUB_STEP_SUMMARY
-            echo "| Status | Details |" >> $GITHUB_STEP_SUMMARY
-            echo "| ------ | ------- |" >> $GITHUB_STEP_SUMMARY
-            echo "| ❌ Failed | Upstream image \`$UPSTREAM_IMAGE\` does not exist or is not accessible |" >> $GITHUB_STEP_SUMMARY
-            echo "| 📝 Impact | The build will likely fail as it depends on this base image |" >> $GITHUB_STEP_SUMMARY
-            echo "| 🔍 Resolution | Verify that the Zabbix version specified is correct and available |" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      # Security: Use OIDC token instead of PAT when possible
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          zabbix_version: ${{ inputs.zabbix_version }}
+          repo_name_var: ${{ env.IMAGE_NAME }}
+          base_name_var: ${{ env.BASE_NAME }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       # Determine local version based on changes in the repository
       - name: Get local version with patch increment if needed
@@ -259,7 +175,7 @@ jobs:
       - name: Run Anchore scan-action on Dockerfile
         id: dockerfile_scan
         uses: anchore/scan-action@v6
-        if: success() && steps.check_upstream_image.outputs.upstream_exists != 'false'
+        if: success() && steps.setup.outputs.upstream_exists != 'false'
         continue-on-error: true
         with:
           path: "."
@@ -300,7 +216,7 @@ jobs:
       # Build image only (do not push yet)
       - name: Build image (no push)
         id: build_image
-        if: success() && (steps.check_upstream_image.outputs.upstream_exists != 'false')
+        if: success() && (steps.setup.outputs.upstream_exists != 'false')
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -308,6 +224,7 @@ jobs:
           provenance: mode=max
           sbom: true
           outputs: type=docker
+          platforms: linux/amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
           file: ./Dockerfile
@@ -315,24 +232,24 @@ jobs:
             "github_token=${{ secrets.GITHUB_TOKEN }}"
           build-args: |
             ZABBIX_VERSION=ubuntu-${{ inputs.zabbix_version }}
-            BUILD_DATE=${{ steps.build_timestamp.outputs.DATE }}
+            BUILD_DATE=${{ steps.setup.outputs.build_date }}
             VCS_REF=${{ github.sha }}
           tags: |
             ${{
               format(
                 '{0}/{1}/{2}:{3}',
-                steps.repo_analysis.outputs.registry,
+                steps.setup.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name,
+                steps.setup.outputs.image_name,
                 steps.local_version.outputs.local_version
               )
             }}
             ${{
               format(
                 '{0}/{1}/{2}:{3}',
-                steps.repo_analysis.outputs.registry,
+                steps.setup.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name,
+                steps.setup.outputs.image_name,
                 inputs.major_minor
               )
             }}
@@ -340,9 +257,9 @@ jobs:
               steps.local_version.outputs.is_local_change == 'false' &&
               format(
                 '{0}/{1}/{2}:{3}',
-                steps.repo_analysis.outputs.registry,
+                steps.setup.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name,
+                steps.setup.outputs.image_name,
                 inputs.zabbix_version
               ) || ''
             }}
@@ -350,18 +267,18 @@ jobs:
               inputs.is_lts == 'true' &&
               format(
                 '{0}/{1}/{2}:lts',
-                steps.repo_analysis.outputs.registry,
+                steps.setup.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name
+                steps.setup.outputs.image_name
               ) || ''
             }}
             ${{
               steps.version_tag_management.outputs.should_tag_latest == 'true' &&
               format(
                 '{0}/{1}/{2}:latest',
-                steps.repo_analysis.outputs.registry,
+                steps.setup.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name
+                steps.setup.outputs.image_name
               ) || ''
             }}
           labels: |
@@ -372,14 +289,14 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.created=${{ steps.build_timestamp.outputs.DATE }}
+            org.opencontainers.image.created=${{ steps.setup.outputs.build_date }}
             org.opencontainers.image.authors=${{ github.repository_owner }}
             org.opencontainers.image.vendor=${{ github.repository_owner }}
             org.opencontainers.image.licenses=AGPL-3.0
             org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/main/README.md
             org.zabbix.upstream.version=${{ inputs.zabbix_version }}
             org.zabbix.local.version=${{ steps.local_version.outputs.local_version }}
-            org.zabbix.build.date=${{ steps.build_timestamp.outputs.DATE }}
+            org.zabbix.build.date=${{ steps.setup.outputs.build_date }}
             org.zabbix.vcs.ref=${{ github.sha }}
             org.zabbix.container.immutable=true
 
@@ -388,7 +305,7 @@ jobs:
       # Push image only if all checks pass
       - name: Push image
         id: push_image
-        if: success() && (steps.check_upstream_image.outputs.upstream_exists != 'false')
+        if: success() && (steps.setup.outputs.upstream_exists != 'false')
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -404,24 +321,24 @@ jobs:
             "github_token=${{ secrets.GITHUB_TOKEN }}"
           build-args: |
             ZABBIX_VERSION=ubuntu-${{ inputs.zabbix_version }}
-            BUILD_DATE=${{ steps.build_timestamp.outputs.DATE }}
+            BUILD_DATE=${{ steps.setup.outputs.build_date }}
             VCS_REF=${{ github.sha }}
           tags: |
             ${{
               format(
                 '{0}/{1}/{2}:{3}',
-                steps.repo_analysis.outputs.registry,
+                steps.setup.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name,
+                steps.setup.outputs.image_name,
                 steps.local_version.outputs.local_version
               )
             }}
             ${{
               format(
                 '{0}/{1}/{2}:{3}',
-                steps.repo_analysis.outputs.registry,
+                steps.setup.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name,
+                steps.setup.outputs.image_name,
                 inputs.major_minor
               )
             }}
@@ -429,9 +346,9 @@ jobs:
               steps.local_version.outputs.is_local_change == 'false' &&
               format(
                 '{0}/{1}/{2}:{3}',
-                steps.repo_analysis.outputs.registry,
+                steps.setup.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name,
+                steps.setup.outputs.image_name,
                 inputs.zabbix_version
               ) || ''
             }}
@@ -439,18 +356,18 @@ jobs:
               inputs.is_lts == 'true' &&
               format(
                 '{0}/{1}/{2}:lts',
-                steps.repo_analysis.outputs.registry,
+                steps.setup.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name
+                steps.setup.outputs.image_name
               ) || ''
             }}
             ${{
               steps.version_tag_management.outputs.should_tag_latest == 'true' &&
               format(
                 '{0}/{1}/{2}:latest',
-                steps.repo_analysis.outputs.registry,
+                steps.setup.outputs.registry,
                 github.repository_owner,
-                steps.repo_analysis.outputs.image_name
+                steps.setup.outputs.image_name
               ) || ''
             }}
           labels: |
@@ -461,14 +378,14 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.created=${{ steps.build_timestamp.outputs.DATE }}
+            org.opencontainers.image.created=${{ steps.setup.outputs.build_date }}
             org.opencontainers.image.authors=${{ github.repository_owner }}
             org.opencontainers.image.vendor=${{ github.repository_owner }}
             org.opencontainers.image.licenses=AGPL-3.0
             org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/main/README.md
             org.zabbix.upstream.version=${{ inputs.zabbix_version }}
             org.zabbix.local.version=${{ steps.local_version.outputs.local_version }}
-            org.zabbix.build.date=${{ steps.build_timestamp.outputs.DATE }}
+            org.zabbix.build.date=${{ steps.setup.outputs.build_date }}
             org.zabbix.vcs.ref=${{ github.sha }}
             org.zabbix.container.immutable=true
 
@@ -479,7 +396,7 @@ jobs:
           echo "## 🏗️ Build Attempt Status" >> $GITHUB_STEP_SUMMARY
 
           # Check if upstream verification was successful
-          if [[ "${{ steps.check_upstream_image.outputs.upstream_exists }}" == "false" ]]; then
+          if [[ "${{ steps.setup.outputs.upstream_exists }}" == "false" ]]; then
             echo "| ❌ Stopped | Build was skipped because upstream image verification failed |" >> $GITHUB_STEP_SUMMARY
             echo "| 🔍 Resolution | Verify that Zabbix version ${{ inputs.zabbix_version }} exists in the Docker Hub registry |" >> $GITHUB_STEP_SUMMARY
             echo "| 🔎 Check | Use 'docker pull zabbix/zabbix-proxy-sqlite3:ubuntu-${{ inputs.zabbix_version }}' to verify |" >> $GITHUB_STEP_SUMMARY
@@ -489,24 +406,43 @@ jobs:
             echo "| ✅ Status | Build attempt proceeded with upstream image |" >> $GITHUB_STEP_SUMMARY
             # Construct image tag
             # Prepare image path for use in reporting
-            REGISTRY="${{ steps.repo_analysis.outputs.registry }}"
+            REGISTRY="${{ steps.setup.outputs.registry }}"
             OWNER="${{ github.repository_owner }}"
-            IMG_NAME="${{ steps.repo_analysis.outputs.image_name }}"
+            IMG_NAME="${{ steps.setup.outputs.image_name }}"
             VERSION="${{ steps.local_version.outputs.local_version }}"
             IMAGE_TAG="$REGISTRY/$OWNER/$IMG_NAME:$VERSION"
             echo "| 🏷️ Image Tag | $IMAGE_TAG |" >> $GITHUB_STEP_SUMMARY
             echo "| 📋 Zabbix Version | ${{ inputs.zabbix_version }} |" >> $GITHUB_STEP_SUMMARY
           fi
 
+      # Security: Scan container for vulnerabilities
+      - name: Run Trivy vulnerability scanner for ${{ steps.local_version.outputs.local_version }}
+        uses: aquasecurity/trivy-action@master
+        id: trivy_scan
+        if: success() && steps.local_version.outputs.local_version != '' && steps.setup.outputs.upstream_exists != 'false'
+        continue-on-error: true
+        with:
+          # Defining the full image path
+          image-ref: ${{ steps.setup.outputs.registry }}/${{ github.repository_owner }}/${{ steps.setup.outputs.image_name }}:${{ steps.local_version.outputs.local_version }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      # Security: Upload vulnerability scan results
+      - name: Upload Trivy scan results for ${{ steps.local_version.outputs.local_version }} to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: success() && steps.trivy_scan.outcome == 'success' && steps.trivy_scan.conclusion == 'success'
+        with:
+          sarif_file: 'trivy-results.sarif'
 
       # Security: Scan container for vulnerabilities using Anchore scan-action
       - name: Run Anchore vulnerability scanner for ${{ steps.local_version.outputs.local_version }}
         uses: anchore/scan-action@v6
         id: anchore_scan
-        if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
+        if: success() && steps.local_version.outputs.local_version != '' && steps.setup.outputs.upstream_exists != 'false'
         continue-on-error: true
         with:
-          image: ${{ steps.repo_analysis.outputs.registry }}/${{ github.repository_owner }}/${{ steps.repo_analysis.outputs.image_name }}:${{ steps.local_version.outputs.local_version }}
+          image: ${{ steps.setup.outputs.registry }}/${{ github.repository_owner }}/${{ steps.setup.outputs.image_name }}:${{ steps.local_version.outputs.local_version }}
           fail-build: false
           severity-cutoff: high
           output-format: sarif
@@ -550,26 +486,66 @@ jobs:
             echo "No vulnerability data available" >> $GITHUB_STEP_SUMMARY
           fi
 
-
-      # Generate SBOM using Anchore SBOM Action and submit to GitHub dependency graph
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
-        id: sbom_generation
-        if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
+      # Generate SPDX SBOM and submit to GitHub dependency graph
+      - name: Generate SPDX SBOM for ${{ steps.local_version.outputs.local_version }}
+        uses: aquasecurity/trivy-action@master
+        id: spdx_sbom
+        if: success() && steps.local_version.outputs.local_version != '' && steps.setup.outputs.upstream_exists != 'false'
         continue-on-error: true
         with:
           # Defining the full image path
-          image: ${{ steps.repo_analysis.outputs.registry }}/${{ github.repository_owner }}/${{ steps.repo_analysis.outputs.image_name }}:${{ steps.local_version.outputs.local_version }}
-          output-file: ./sbom-spdx.json
-          format: spdx-json
+          image-ref: ${{ steps.setup.outputs.registry }}/${{ github.repository_owner }}/${{ steps.setup.outputs.image_name }}:${{ steps.local_version.outputs.local_version }}
+          format: 'spdx-json'
+          output: 'sbom-spdx.json'
+
+      # Validate SPDX SBOM contents
+      - name: Validate SPDX SBOM for ${{ steps.local_version.outputs.local_version }}
+        id: validate_spdx_sbom
+        if: success() && steps.spdx_sbom.outcome == 'success' && steps.spdx_sbom.conclusion == 'success'
+        run: |
+          echo "## SPDX SBOM Validation" >> $GITHUB_STEP_SUMMARY
+
+          # Check if the file exists and has content
+          if [ -f "sbom-spdx.json" ] && [ -s "sbom-spdx.json" ]; then
+            echo ":white_check_mark: SPDX SBOM file exists and has content" >> $GITHUB_STEP_SUMMARY
+
+            # Count packages
+            PACKAGE_COUNT=$(jq '.packages | length' sbom-spdx.json)
+            echo ":information_source: Contains information on $PACKAGE_COUNT packages" >> $GITHUB_STEP_SUMMARY
+
+            # Check for critical tools
+            for TOOL in "zabbix" "sqlite" "python" "snmp"; do
+              if jq -e ".packages[] | select(.name | test(\"$TOOL\"; \"i\"))" sbom-spdx.json > /dev/null; then
+                echo ":white_check_mark: Found SBOM entries related to: $TOOL" >> $GITHUB_STEP_SUMMARY
+              else
+                echo ":warning: No SBOM entries found for key component: $TOOL" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+          else
+            echo ":x: SPDX SBOM file is missing or empty" >> $GITHUB_STEP_SUMMARY
+            echo "::warning::SPDX SBOM file is missing or empty"
+          fi
+
+      # Generate SBOM using Anchore SBOM Action with GitHub's built-in dependency snapshot support
+      - name: Generate SBOM for ${{ steps.local_version.outputs.local_version }}
+        uses: anchore/sbom-action@v0
+        id: anchore_sbom_generation
+        if: success() && steps.local_version.outputs.local_version != '' && steps.setup.outputs.upstream_exists != 'false'
+        continue-on-error: true
+        with:
+          # Defining the full image path
+          image: ${{ steps.setup.outputs.registry }}/${{ github.repository_owner }}/${{ steps.setup.outputs.image_name }}:${{ steps.local_version.outputs.local_version }}
+          artifact-name: sbom-${{ steps.local_version.outputs.local_version }}.spdx.json
+          output-file: ./sbom-${{ steps.local_version.outputs.local_version }}.json
+          format: cyclonedx-json
           # Try to use the built-in dependency snapshot if permissions allow, will silently skip if not available
           dependency-snapshot: true
 
       # Debug SBOM file format to help with troubleshooting
       - name: Debug SBOM file format
-        if: success() && steps.sbom_generation.outcome == 'success' && steps.sbom_generation.conclusion == 'success'
+        if: success() && steps.anchore_sbom_generation.outcome == 'success' && steps.anchore_sbom_generation.conclusion == 'success'
         run: |
-          SBOM_FILE="./sbom-spdx.json"
+          SBOM_FILE="./sbom-${{ steps.local_version.outputs.local_version }}.json"
           echo "## SBOM File Format Debug" >> $GITHUB_STEP_SUMMARY
 
           if [ -f "$SBOM_FILE" ] && [ -s "$SBOM_FILE" ]; then
@@ -586,16 +562,21 @@ jobs:
               jq 'keys' "$SBOM_FILE" >> $GITHUB_STEP_SUMMARY
               echo '```' >> $GITHUB_STEP_SUMMARY
 
-              # Check if it has the expected SPDX format
-              if jq -e '.spdxVersion' "$SBOM_FILE" > /dev/null; then
-                echo ":white_check_mark: File appears to follow SPDX format" >> $GITHUB_STEP_SUMMARY
+              # Check if it has the expected CycloneDX format
+              if jq -e '.bomFormat == "CycloneDX"' "$SBOM_FILE" > /dev/null; then
+                echo ":white_check_mark: File follows CycloneDX format" >> $GITHUB_STEP_SUMMARY
 
-                # Extract package count for reference
-                PACKAGE_COUNT=$(jq '.packages | length' "$SBOM_FILE")
-                echo "Contains $PACKAGE_COUNT packages" >> $GITHUB_STEP_SUMMARY
+                # Extract component count for reference
+                COMPONENT_COUNT=$(jq '.components | length' "$SBOM_FILE")
+                echo "Contains $COMPONENT_COUNT components" >> $GITHUB_STEP_SUMMARY
 
+                # Sample first component for format inspection
+                echo "### Sample Component Format" >> $GITHUB_STEP_SUMMARY
+                echo '```json' >> $GITHUB_STEP_SUMMARY
+                jq '.components[0]' "$SBOM_FILE" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
               else
-                echo ":warning: File doesn't appear to follow SPDX format" >> $GITHUB_STEP_SUMMARY
+                echo ":warning: File doesn't follow expected CycloneDX format" >> $GITHUB_STEP_SUMMARY
               fi
             else
               echo ":x: File is not valid JSON" >> $GITHUB_STEP_SUMMARY
@@ -696,9 +677,7 @@ jobs:
                       "buildTarget": $version,
                       "zabbixVersion": $zabbix_version
                     },
-                    "manifests": {
-                      "zabbix-proxy.cdx.json": $sbom[0]
-                    }
+                    "manifests": $sbom
                   }' > dependency-snapshot.json
 
                 # Save dependency snapshot for diagnostics
@@ -890,8 +869,7 @@ jobs:
                           "sha": $sha,
                           "ref": $ref,
                           "detector": $detector,
-                        "manifests": {
-                          "zabbix-proxy-minimal.json": {
+                          "manifests": [{
                             "name": "zabbix-proxy",
                             "version": $version,
                             "bom": {
@@ -903,7 +881,7 @@ jobs:
                                   "name": "zabbix-proxy-sqlite3",
                                   "version": $version
                                 }
-                                },
+                              },
                               "components": [
                                 {
                                   "type": "library",
@@ -917,8 +895,7 @@ jobs:
                                 }
                               ]
                             }
-                            }
-                        }
+                          }]
                         }' > minimal-snapshot.json
 
                       # Save for diagnostics
@@ -1076,13 +1053,13 @@ jobs:
 
       # Verify Docker Image Attestations
       - name: Verify Docker Image Attestations for ${{ steps.local_version.outputs.local_version }}
-        if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
+        if: success() && steps.local_version.outputs.local_version != '' && steps.setup.outputs.upstream_exists != 'false'
         run: |
           echo "## Docker Image Attestations" >> $GITHUB_STEP_SUMMARY
           # Prepare image reference for attestation verification
-          REGISTRY="${{ steps.repo_analysis.outputs.registry }}"
+          REGISTRY="${{ steps.setup.outputs.registry }}"
           OWNER="${{ github.repository_owner }}"
-          IMG_NAME="${{ steps.repo_analysis.outputs.image_name }}"
+          IMG_NAME="${{ steps.setup.outputs.image_name }}"
           VERSION="${{ steps.local_version.outputs.local_version }}"
           IMAGE_REF="$REGISTRY/$OWNER/$IMG_NAME:$VERSION"
 
@@ -1188,7 +1165,7 @@ jobs:
           ### 📥 Container Images
           ```bash
           # Pull this specific version
-          docker pull ${{ steps.repo_analysis.outputs.registry }}/${{ github.repository_owner }}/${{ steps.repo_analysis.outputs.image_name }}:$LOCAL_VERSION
+          docker pull ${{ steps.setup.outputs.registry }}/${{ github.repository_owner }}/${{ steps.setup.outputs.image_name }}:$LOCAL_VERSION
           ```
 
           ### 📋 Container Metadata
@@ -1210,13 +1187,13 @@ jobs:
           EOF
 
       - name: Extract SBOM from ${{ steps.local_version.outputs.local_version }} built image
-        if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
+        if: success() && steps.local_version.outputs.local_version != '' && steps.setup.outputs.upstream_exists != 'false'
         continue-on-error: true
         run: |
           # Set up image reference for extraction
-          REGISTRY="${{ steps.repo_analysis.outputs.registry }}"
+          REGISTRY="${{ steps.setup.outputs.registry }}"
           OWNER="${{ github.repository_owner }}"
-          IMG_NAME="${{ steps.repo_analysis.outputs.image_name }}"
+          IMG_NAME="${{ steps.setup.outputs.image_name }}"
           VERSION="${{ steps.local_version.outputs.local_version }}"
           IMAGE_TAG="$REGISTRY/$OWNER/$IMG_NAME:$VERSION"
           CONTAINER_ID=$(docker create $IMAGE_TAG)
@@ -1225,14 +1202,14 @@ jobs:
 
       # Verify image metadata was properly applied and check for vulnerability mitigation
       - name: Verify OCI metadata for ${{ steps.local_version.outputs.local_version }}
-        if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
+        if: success() && steps.local_version.outputs.local_version != '' && steps.setup.outputs.upstream_exists != 'false'
         run: |
           echo "## OCI Metadata Validation" >> $GITHUB_STEP_SUMMARY
 
           # Use outputs from previous steps and environment variables
-          REGISTRY="${{ steps.repo_analysis.outputs.registry }}"
+          REGISTRY="${{ steps.setup.outputs.registry }}"
           OWNER="${{ github.repository_owner }}"
-          IMG_NAME="${{ steps.repo_analysis.outputs.image_name }}"
+          IMG_NAME="${{ steps.setup.outputs.image_name }}"
           VERSION="${{ steps.local_version.outputs.local_version }}"
           IMAGE_TAG="$REGISTRY/$OWNER/$IMG_NAME:$VERSION"
 
@@ -1267,7 +1244,7 @@ jobs:
 
       - name: Validate SBOM contents for ${{ steps.local_version.outputs.local_version }}
         id: validate_sbom
-        if: success() && steps.local_version.outputs.local_version != '' && steps.check_upstream_image.outputs.upstream_exists != 'false'
+        if: success() && steps.local_version.outputs.local_version != '' && steps.setup.outputs.upstream_exists != 'false'
         continue-on-error: true
         run: |
           SBOM=./zabbix-proxy-sbom-${{ steps.local_version.outputs.local_version }}.txt
@@ -1316,7 +1293,7 @@ jobs:
       # Prepare file list for release assets
       - name: Prepare release assets
         id: prepare_assets
-        if: steps.check_upstream_image.outputs.upstream_exists != 'false'
+        if: steps.setup.outputs.upstream_exists != 'false'
         run: |
           ASSETS=""
           SBOM_FILE="./zabbix-proxy-sbom-${{ steps.local_version.outputs.local_version }}.txt"
@@ -1338,7 +1315,7 @@ jobs:
 
       - name: Create GitHub Release for ${{ steps.local_version.outputs.local_version }}
         id: create_release
-        if: steps.check_upstream_image.outputs.upstream_exists != 'false'
+        if: steps.setup.outputs.upstream_exists != 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.local_version.outputs.local_version }}
