@@ -308,6 +308,8 @@ jobs:
           provenance: mode=max
           sbom: true
           outputs: type=docker
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           file: ./Dockerfile
           secrets: |
             "github_token=${{ secrets.GITHUB_TOKEN }}"
@@ -395,6 +397,8 @@ jobs:
           sbom: true
           platforms: linux/amd64
           outputs: type=image
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           file: ./Dockerfile
           secrets: |
             "github_token=${{ secrets.GITHUB_TOKEN }}"

@@ -60,7 +60,17 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Cache MIBs
+        id: cache-mibs
+        uses: actions/cache@v4
+        with:
+          path: mibs
+          key: ${{ runner.os }}-mibs-${{ hashFiles('mibs/mibs.json') }}
+          restore-keys: |
+            ${{ runner.os }}-mibs-
+
       - name: Download MIBs
+        if: steps.cache-mibs.outputs.cache-hit != 'true'
         run: ./scripts/download-mibs.sh
 
   # Check if we need to rebuild containers
