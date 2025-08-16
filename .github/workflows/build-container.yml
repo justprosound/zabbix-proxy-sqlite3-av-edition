@@ -80,6 +80,14 @@ jobs:
             echo "Upstream image $UPSTREAM_IMAGE not found (HTTP status: $HTTP_STATUS)."
             echo "upstream_exists=false" >> $GITHUB_OUTPUT
           fi
+      - name: Setup and Verify Build Environment
+        id: setup
+        uses: ./.github/actions/setup-and-verify
+        with:
+          zabbix_version: ${{ inputs.zabbix_version }}
+          repo_name_var: ${{ env.IMAGE_NAME }}
+          base_name_var: ${{ env.BASE_NAME }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       # Determine local version based on changes in the repository
       - name: Get local version with patch increment if needed
