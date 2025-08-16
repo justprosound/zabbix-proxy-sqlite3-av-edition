@@ -48,6 +48,9 @@ jobs:
       # Define the base name for documentation
       BASE_NAME: ${{ vars.BASE_NAME || 'Zabbix Proxy SQLite3 AV Edition' }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Setup and Verify Build Environment
         id: setup
         uses: ./.github/actions/setup-and-verify
