@@ -53,35 +53,6 @@ jobs:
 
       - name: Setup and Verify Build Environment
         id: setup
-        run: |
-          # Set build date
-          BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-          echo "build_date=$BUILD_DATE" >> $GITHUB_OUTPUT
-
-          # Set registry and image name
-          REGISTRY="ghcr.io"
-          IMAGE_NAME="${{ env.IMAGE_NAME }}"
-          echo "registry=$REGISTRY" >> $GITHUB_OUTPUT
-          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
-
-          # Check if upstream image exists
-          ZABBIX_VERSION="${{ inputs.zabbix_version }}"
-          UPSTREAM_IMAGE="zabbix/zabbix-proxy-sqlite3:ubuntu-$ZABBIX_VERSION"
-
-          # Use curl to check the manifest. It's faster than docker pull.
-          # The token is optional for public images, but good practice to include.
-          TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:zabbix/zabbix-proxy-sqlite3:pull" | jq -r .token)
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" "https://registry-1.docker.io/v2/zabbix/zabbix-proxy-sqlite3/manifests/ubuntu-$ZABBIX_VERSION")
-
-          if [ "$HTTP_STATUS" -eq 200 ]; then
-            echo "Upstream image $UPSTREAM_IMAGE found."
-            echo "upstream_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Upstream image $UPSTREAM_IMAGE not found (HTTP status: $HTTP_STATUS)."
-            echo "upstream_exists=false" >> $GITHUB_OUTPUT
-          fi
-      - name: Setup and Verify Build Environment
-        id: setup
         uses: ./.github/actions/setup-and-verify
         with:
           zabbix_version: ${{ inputs.zabbix_version }}
