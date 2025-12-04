@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Security: Validate kubectl is available
 if ! command -v kubectl >/dev/null 2>&1; then

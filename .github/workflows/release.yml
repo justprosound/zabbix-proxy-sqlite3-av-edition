@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Run daily at 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild even if image exists'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  detect-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.detect.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect Zabbix Versions
+        id: detect
+        run: ./.github/scripts/detect-version.sh 7.0.0
+
+  build-release:
+    needs: detect-versions
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJson(needs.detect-versions.outputs.versions) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if image exists
+        id: check_image
+        if: github.event_name == 'schedule' || inputs.force_rebuild != true
+        run: |
+          # Simple check to see if tag exists in GHCR
+          # Logic to be implemented or use a simple docker manifest inspect
+          echo "Checking if image exists for version ${{ matrix.version }}"
+          # For now, we assume we proceed, or implement actual check
+          echo "exists=false" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            ZABBIX_VERSION=ubuntu-${{ matrix.version }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ matrix.version }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ matrix.version }}
+          name: "v${{ matrix.version }}"
+          generate_release_notes: true

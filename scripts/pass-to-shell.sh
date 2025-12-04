@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Security: Log all command executions for audit trail
 readonly LOGFILE="/var/log/zabbix/shell-commands.log"

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Input validation
 if [[ $# -ne 3 ]]; then
