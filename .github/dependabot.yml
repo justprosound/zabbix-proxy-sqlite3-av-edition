@@ -22,15 +22,6 @@ updates:
       # Ignore major updates for Docker images (matching your Renovate config)
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-    # Security updates
-    security-updates-only: false
-    # Auto-merge minor and patch updates (matching your Renovate config)
-    automerge: true
-    automerge-strategy: "squash"
-    conditions:
-      - "author=dependabot[bot]"
-      - "check-success=build"
-
   # GitHub Actions dependency updates
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -46,12 +37,6 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
-    # Auto-merge minor and patch updates for GitHub Actions
-    automerge: true
-    automerge-strategy: "squash"
-    conditions:
-      - "author=dependabot[bot]"
-      - "check-success=build"
 
   # Python package dependencies (for any Python scripts)
   - package-ecosystem: "pip"
@@ -68,11 +53,6 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
-    automerge: true
-    automerge-strategy: "squash"
-    conditions:
-      - "author=dependabot[bot]"
-      - "check-success=build"
 
 # Note: The following custom dependencies are NOT managed by Dependabot
 # but are handled by the custom-dependencies-check.yml workflow:
