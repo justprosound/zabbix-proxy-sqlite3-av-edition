@@ -166,7 +166,7 @@ docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:7.0.13
 - 🏗️ **CI/CD pipeline** with multi-architecture builds
 - 🚀 **Automatic releases** for each upstream Zabbix version
 - 🏷️ **Smart versioning** with local change tracking
-- 🧹 **Consolidated workflows** for better maintainability ([see details](WORKFLOW-CHANGES.md))
+- 🧹 **Consolidated workflows** for better maintainability
 
 ### 📦 Release Strategy
 
@@ -206,6 +206,7 @@ docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:7.0.13
 ## 📚 Documentation & Support
 
 - 📖 [Official Zabbix Documentation](https://www.zabbix.com/documentation/)
+- 🤝 [Contributing Guide](CONTRIBUTING.md)
 - 🐛 [Issue Tracker](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/issues)
 - 💬 [Discussions](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/discussions)
 - 📧 [Contact](https://hyperscaleav.com/)

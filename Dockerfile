@@ -2,6 +2,7 @@
 # Global hadolint ignore directives
 # hadolint global ignore=DL3003,DL3008,DL4001,DL3047,SC2015,SC2016
 ARG ZABBIX_VERSION=ubuntu-7.4.5
+ARG OOKLA_VERSION=1.2.0
 FROM zabbix/zabbix-proxy-sqlite3:${ZABBIX_VERSION}
 
 # Switch to root for installation tasks
@@ -119,7 +120,7 @@ RUN echo "Installing Ookla Speedtest CLI (binary)..." && \
         # hadolint ignore=DL3003
         cd /tmp/speedtest && \
         # Try to download the latest version
-        curl -fsSL --retry 3 --retry-delay 2 https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-x86_64.tgz \
+        curl -fsSL --retry 3 --retry-delay 2 "https://install.speedtest.net/app/cli/ookla-speedtest-${OOKLA_VERSION}-linux-x86_64.tgz" \
             -o speedtest.tgz && \
         tar -xzf speedtest.tgz -C /tmp/speedtest && \
         # Install to /usr/local/bin
