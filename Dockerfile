@@ -98,9 +98,9 @@ RUN echo "Installing Cloudflare Python Speedtest CLI..." && \
     # Create a virtual environment for our Python packages
     python3 -m venv /opt/venv && \
     # Install cloudflarepycli from PyPI in the virtual environment
-    /opt/venv/bin/pip install --no-cache-dir cloudflarepycli && \
+    /opt/venv/bin/pip install --no-cache-dir cloudflarepycli==2.0.2 && \
     # Update pip and dependencies in venv
-    /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip==25.3 setuptools==80.9.0 wheel==0.45.1 && \
     # Create a wrapper script for our cfspeedtest command
     echo '#!/bin/bash' > /usr/local/bin/cfspeedtest && \
     echo '/opt/venv/bin/cfspeedtest "$@"' >> /usr/local/bin/cfspeedtest && \
