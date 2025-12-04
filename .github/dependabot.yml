@@ -17,7 +17,6 @@ updates:
       - "docker"
     commit-message:
       prefix: "chore(deps)"
-      include: "scope"
     ignore:
       # Ignore major updates for Docker images (matching your Renovate config)
       - dependency-name: "*"
@@ -36,7 +35,6 @@ updates:
       - "github-actions"
     commit-message:
       prefix: "chore(deps)"
-      include: "scope"
 
   # Python package dependencies (for any Python scripts)
   - package-ecosystem: "pip"
@@ -52,7 +50,6 @@ updates:
       - "python"
     commit-message:
       prefix: "chore(deps)"
-      include: "scope"
 
 # Note: The following custom dependencies are NOT managed by Dependabot
 # but are handled by the custom-dependencies-check.yml workflow:
