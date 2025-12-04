@@ -1,6 +1,6 @@
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v5.0.0
+  rev: v6.0.0
   hooks:
   - id: trailing-whitespace
   - id: end-of-file-fixer
@@ -8,7 +8,7 @@ repos:
   - id: check-added-large-files
 
 - repo: https://github.com/rhysd/actionlint
-  rev: v1.7.7
+  rev: v1.7.9
   hooks:
   - id: actionlint
     name: Lint GitHub Actions workflow files
@@ -16,7 +16,7 @@ repos:
     args: ["-shellcheck="]
 
 - repo: https://github.com/hadolint/hadolint
-  rev: v2.13.1-beta
+  rev: v2.14.0
   hooks:
   - id: hadolint
     name: Lint Dockerfiles
