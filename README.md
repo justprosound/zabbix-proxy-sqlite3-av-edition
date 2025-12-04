@@ -3,6 +3,7 @@
 [![Build & Push](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/main-ci.yml/badge.svg)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/main-ci.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/justprosound/zabbix-proxy-sqlite3-av-edition)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
+[![OpenSSF Best Practices](https://bestpractices.coreinfrastructure.org/projects/REPLACE_WITH_PROJECT_ID/badge)](https://bestpractices.coreinfrastructure.org/projects/REPLACE_WITH_PROJECT_ID)
 
 ## 📋 Overview
 
