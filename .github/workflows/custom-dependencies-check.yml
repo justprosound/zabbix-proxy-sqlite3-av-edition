@@ -250,7 +250,7 @@ jobs:
           else
             echo "has_update=false" >> $GITHUB_OUTPUT
           fi
-          
+
           echo "current_version=$CURRENT_NUM" >> $GITHUB_OUTPUT
           echo "latest_version=$LATEST_NUM" >> $GITHUB_OUTPUT
 
