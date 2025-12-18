@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Security: Log all command executions for audit trail
-readonly LOGFILE="/var/log/zabbix/shell-commands.log"
+readonly LOGFILE="${PASS_TO_SHELL_LOGFILE:-/var/log/zabbix/shell-commands.log}"
 readonly MAX_CMD_LENGTH=1024
 
 # Input validation
@@ -19,26 +19,30 @@ if [[ ${#COMMAND} -gt $MAX_CMD_LENGTH ]]; then
     exit 1
 fi
 
+# Normalize whitespace to single spaces for reliable matching
+COMMAND=$(echo "$COMMAND" | tr -s ' ')
+
 # Security: Block dangerous commands
-readonly BLOCKED_COMMANDS=(
-    "rm -rf /"
-    "dd if="
+# Using regex to catch variants
+readonly BLOCKED_Patterns=(
+    "rm[[:space:]]+.*-rf"
+    "dd[[:space:]]+if="
     "mkfs"
     "fdisk"
     "parted"
     "crontab"
     "sudo"
-    "su -"
+    "su[[:space:]]+-"
     "passwd"
     "userdel"
     "usermod"
-    "chmod 777"
-    "chown root"
+    "chmod[[:space:]]+777"
+    "chown[[:space:]]+root"
 )
 
-for blocked in "${BLOCKED_COMMANDS[@]}"; do
-    if [[ "$COMMAND" =~ $blocked ]]; then
-        echo "Error: Blocked command detected: $blocked" >&2
+for pattern in "${BLOCKED_Patterns[@]}"; do
+    if [[ "$COMMAND" =~ $pattern ]]; then
+        echo "Error: Blocked command detected: $pattern" >&2
         echo "$(date): BLOCKED: $COMMAND" >> "$LOGFILE" 2>/dev/null
         exit 1
     fi
