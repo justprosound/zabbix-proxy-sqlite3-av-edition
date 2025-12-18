@@ -87,6 +87,7 @@ RUN apt-get update && \
 # Install Cloudflare Speedtest Python CLI (cloudflarepycli)
 # hadolint ignore=DL3008
 WORKDIR /tmp
+COPY requirements-docker.txt /tmp/requirements-docker.txt
 RUN echo "Installing Cloudflare Python Speedtest CLI..." && \
     # Make sure pip is installed
     # hadolint ignore=DL3008
@@ -98,9 +99,7 @@ RUN echo "Installing Cloudflare Python Speedtest CLI..." && \
     # Create a virtual environment for our Python packages
     python3 -m venv /opt/venv && \
     # Install cloudflarepycli from PyPI in the virtual environment
-    /opt/venv/bin/pip install --no-cache-dir cloudflarepycli==2.0.2 && \
-    # Update pip and dependencies in venv
-    /opt/venv/bin/pip install --no-cache-dir --upgrade pip==25.3 setuptools==80.9.0 wheel==0.45.1 && \
+    /opt/venv/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements-docker.txt && \
     # Create a wrapper script for our cfspeedtest command
     echo '#!/bin/bash' > /usr/local/bin/cfspeedtest && \
     echo '/opt/venv/bin/cfspeedtest "$@"' >> /usr/local/bin/cfspeedtest && \
@@ -183,12 +182,13 @@ RUN apt-get update && \
 
 # Install kubectl for Kubernetes management
 # Download kubectl, verify the checksum, and install
-RUN KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt) && \
-    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
-    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" && \
-    echo "$(cat kubectl.sha256) kubectl" | sha256sum --check && \
+# Pinned version for security and reproducibility - update via implementation plan when needed
+ARG KUBECTL_VERSION=v1.35.0
+ARG KUBECTL_SHA256=a2e984a18a0c063279d692533031c1eff93a262afcc0afdc517375432d060989
+RUN curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
+    echo "${KUBECTL_SHA256} kubectl" | sha256sum --check && \
     install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
-    rm kubectl kubectl.sha256
+    rm kubectl
 
 # Copy custom scripts to Zabbix external scripts directory
 COPY --chown=1997 --chmod=0711 ./scripts/* /usr/lib/zabbix/externalscripts/

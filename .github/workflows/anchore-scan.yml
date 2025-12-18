@@ -15,13 +15,15 @@ on:
         options: ['negligible', 'low', 'medium', 'high', 'critical']
 
 # Security: Minimal required permissions
-permissions:
-  contents: read
-  packages: read
-  security-events: write  # For security scanning
+# Security: Minimal required permissions
+permissions: read-all
 
 jobs:
   scan:
+    permissions:
+      contents: read
+      packages: read
+      security-events: write  # For security scanning
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
