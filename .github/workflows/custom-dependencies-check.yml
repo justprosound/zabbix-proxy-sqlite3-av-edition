@@ -226,26 +226,37 @@ jobs:
       - name: Get current kubectl version
         id: extract_version
         run: |
-          # For kubectl, we're using 'stable' from the download URL
-          echo "current_version=stable" >> $GITHUB_OUTPUT
+          # Extract pinned version from Dockerfile
+          CURRENT_VERSION=$(grep -oP 'ARG KUBECTL_VERSION=\K.*' Dockerfile || echo "")
+          echo "Current kubectl version: $CURRENT_VERSION"
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
 
       - name: Get latest kubectl version
         id: check_version
         run: |
-          # Get actual version number for 'stable'
+          # Get current version details
+          CURRENT_VERSION="${{ steps.extract_version.outputs.current_version }}"
+          CURRENT_NUM=${CURRENT_VERSION#v}
+
+          # Get latest stable version
           LATEST_VERSION=$(curl -Ls https://dl.k8s.io/release/stable.txt)
-          LATEST_VERSION=${LATEST_VERSION#v} # Remove 'v' prefix
+          LATEST_NUM=${LATEST_VERSION#v}
 
-          echo "Using latest stable kubectl version: $LATEST_VERSION"
+          echo "Current pinned: $CURRENT_VERSION ($CURRENT_NUM)"
+          echo "Latest stable: $LATEST_VERSION ($LATEST_NUM)"
 
-          # Since kubectl uses 'stable' tag which always points to latest,
-          # there's never an "outdated" version in the traditional sense,
-          # but we can notify about what version 'stable' currently points to
-          echo "has_update=false" >> $GITHUB_OUTPUT
-          echo "current_version=stable" >> $GITHUB_OUTPUT
-          echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          if [[ "$CURRENT_NUM" != "$LATEST_NUM" ]]; then
+            echo "has_update=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_update=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "current_version=$CURRENT_NUM" >> $GITHUB_OUTPUT
+          echo "latest_version=$LATEST_NUM" >> $GITHUB_OUTPUT
 
-          echo "::notice::kubectl 'stable' tag currently points to version $LATEST_VERSION"
+          if [[ "$CURRENT_NUM" != "$LATEST_NUM" ]]; then
+            echo "::notice::kubectl update available: $CURRENT_NUM → $LATEST_NUM"
+          fi
 
   check-dockerfile-vulnerabilities:
     name: Check Dockerfile Security Vulnerabilities

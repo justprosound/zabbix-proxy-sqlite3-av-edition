@@ -1,6 +1,6 @@
 # 🔍 Zabbix Proxy SQLite3 for AV System Monitoring
 
-[![Build & Push](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/main-ci.yml/badge.svg)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/main-ci.yml)
+[![Build & Push](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/ci.yml/badge.svg)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/ci.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/justprosound/zabbix-proxy-sqlite3-av-edition)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
 [![OpenSSF Best Practices](https://bestpractices.coreinfrastructure.org/projects/11554/badge)](https://bestpractices.coreinfrastructure.org/projects/11554)
@@ -24,6 +24,10 @@ A specialized Zabbix Proxy container built on SQLite3, enhanced and optimized fo
 - **Base Image**: [Official Zabbix Proxy SQLite3](https://hub.docker.com/r/zabbix/zabbix-proxy-sqlite3)
 - **Original Work**: [Zabbix Community](https://github.com/zabbix)
 - **Enhanced By**: [Hyperscale AV](https://github.com/HyperscaleAV)
+
+### 📜 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a list of changes.
 
 ---
 
@@ -88,10 +92,10 @@ volumes:
 | Version | Container Tags | Zabbix Version | Support Status |
 |---------|---------------|----------------|----------------|
 | **7.0.13** | `lts`, `7.0.13`, `7.0` | 7.0 LTS | ✅ **Long-Term Support** |
-| **7.2.7** | `latest`, `7.2.7`, `7.2` | 7.2 Stable | ✅ Latest Features |
+| **7.2.x** | `latest`, `7.2.x`, `7.2` | 7.2 Stable | ✅ Latest Features |
 | **Historical** | `X.Y.Z` | 7.0.0+ | 🔄 Available on demand |
 
-> **📌 Note**: The `latest` tag points to the **highest version number (7.2.7)**, while the `lts` tag points to the **LTS version (7.0.13)** for maximum stability in production environments. Check the [Zabbix release notes](https://www.zabbix.com/release_notes) for detailed version differences.
+> **📌 Note**: The `latest` tag points to the **highest version number (7.2.x)**, while the `lts` tag points to the **LTS version (7.0.13)** for maximum stability in production environments. Check the [Zabbix release notes](https://www.zabbix.com/release_notes) for detailed version differences.
 
 ### 🕰️ Historical Versions
 

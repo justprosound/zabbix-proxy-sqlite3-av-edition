@@ -11,9 +11,7 @@ on:
         type: boolean
         default: false
 
-permissions:
-  contents: write
-  packages: write
+permissions: read-all
 
 jobs:
   detect-versions:
@@ -29,6 +27,9 @@ jobs:
   build-release:
     needs: detect-versions
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     strategy:
       fail-fast: false
       matrix:

@@ -1,0 +1,159 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 13.33kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/zabbix/zabbix-proxy-sqlite3:ubuntu-7.4.5
+#2 DONE 0.1s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [ 1/21] FROM docker.io/zabbix/zabbix-proxy-sqlite3:ubuntu-7.4.5@sha256:a75df218b5ea7f36ffae28b546692bbdf32da846774bae31535bf0cadb67ba67
+#4 resolve docker.io/zabbix/zabbix-proxy-sqlite3:ubuntu-7.4.5@sha256:a75df218b5ea7f36ffae28b546692bbdf32da846774bae31535bf0cadb67ba67 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 398B done
+#5 DONE 0.0s
+
+#6 [ 2/21] RUN mkdir -p /usr/share/snmp/mibs/custom &&     chown -R 1997:1997 /usr/share/snmp/mibs/custom &&     chmod 755 /usr/share/snmp/mibs/custom
+#6 CACHED
+
+#7 [ 3/21] RUN apt-get update &&     echo 'APT::Default-Release "noble";' > /etc/apt/apt.conf.d/99defaultrelease &&     apt-get install -y --no-install-recommends     iputils-ping     iputils-tracepath     traceroute     fping     dnsutils     nmap     netcat-openbsd     mtr     iproute2     tcpdump     snmp     snmp-mibs-downloader     curl     wget     ca-certificates     nano     jq     jo     expect     python3     python3-pip     python3-setuptools     gnupg     apt-transport-https     && apt-get upgrade -y     && apt-get clean     && rm -rf /var/lib/apt/lists/*
+#7 CACHED
+
+#8 [ 4/21] RUN apt-get update &&     apt-get upgrade -y &&     apt-get install -y --no-install-recommends     gnupg ca-certificates apt-transport-https curl dirmngr &&     apt-get clean &&     rm -rf /var/lib/apt/lists/*
+#8 CACHED
+
+#9 [ 5/21] WORKDIR /tmp
+#9 CACHED
+
+#10 [ 6/21] COPY requirements-docker.txt /tmp/requirements-docker.txt
+#10 CACHED
+
+#11 [ 7/21] RUN echo "Installing Cloudflare Python Speedtest CLI..." &&     apt-get update &&     apt-get upgrade -y &&     apt-get install -y --no-install-recommends python3-pip python3-setuptools python3-venv &&     python3 -m venv /opt/venv &&     /opt/venv/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements-docker.txt &&     echo '#!/bin/bash' > /usr/local/bin/cfspeedtest &&     echo '/opt/venv/bin/cfspeedtest "$@"' >> /usr/local/bin/cfspeedtest &&     chmod +x /usr/local/bin/cfspeedtest &&     apt-get clean &&     rm -rf /var/lib/apt/lists/*
+#11 0.211 Installing Cloudflare Python Speedtest CLI...
+#11 0.342 Get:1 http://security.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+#11 0.448 Get:2 http://archive.ubuntu.com/ubuntu noble InRelease [256 kB]
+#11 0.506 Get:3 http://security.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1182 kB]
+#11 0.665 Get:4 http://security.ubuntu.com/ubuntu noble-security/main amd64 Packages [1700 kB]
+#11 0.802 Get:5 http://security.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [2796 kB]
+#11 0.980 Get:6 http://security.ubuntu.com/ubuntu noble-security/multiverse amd64 Packages [33.1 kB]
+#11 1.195 Get:7 http://archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+#11 1.323 Get:8 http://archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+#11 1.453 Get:9 http://archive.ubuntu.com/ubuntu noble/universe amd64 Packages [19.3 MB]
+#11 3.105 Get:10 http://archive.ubuntu.com/ubuntu noble/multiverse amd64 Packages [331 kB]
+#11 3.124 Get:11 http://archive.ubuntu.com/ubuntu noble/main amd64 Packages [1808 kB]
+#11 3.205 Get:12 http://archive.ubuntu.com/ubuntu noble/restricted amd64 Packages [117 kB]
+#11 3.214 Get:13 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [2059 kB]
+#11 3.353 Get:14 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1943 kB]
+#11 3.453 Get:15 http://archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [2929 kB]
+#11 3.679 Get:16 http://archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Packages [35.9 kB]
+#11 3.681 Get:17 http://archive.ubuntu.com/ubuntu noble-backports/main amd64 Packages [49.4 kB]
+#11 3.685 Get:18 http://archive.ubuntu.com/ubuntu noble-backports/universe amd64 Packages [34.3 kB]
+#11 3.835 Fetched 35.0 MB in 4s (9736 kB/s)
+#11 3.835 Reading package lists...
+#11 4.406 Reading package lists...
+#11 4.935 Building dependency tree...
+#11 5.068 Reading state information...
+#11 5.102 Calculating upgrade...
+#11 5.292 0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
+#11 5.299 Reading package lists...
+#11 5.821 Building dependency tree...
+#11 5.949 Reading state information...
+#11 6.062 python3-pip is already the newest version (24.0+dfsg-1ubuntu1.3).
+#11 6.062 python3-setuptools is already the newest version (68.1.2-2ubuntu1.2).
+#11 6.062 The following additional packages will be installed:
+#11 6.062   python3-pip-whl python3-setuptools-whl python3.12-venv
+#11 6.081 The following NEW packages will be installed:
+#11 6.081   python3-pip-whl python3-setuptools-whl python3-venv python3.12-venv
+#11 6.284 0 upgraded, 4 newly installed, 0 to remove and 0 not upgraded.
+#11 6.284 Need to get 2430 kB of archives.
+#11 6.284 After this operation, 2783 kB of additional disk space will be used.
+#11 6.284 Get:1 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 python3-pip-whl all 24.0+dfsg-1ubuntu1.3 [1707 kB]
+#11 7.074 Get:2 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 python3-setuptools-whl all 68.1.2-2ubuntu1.2 [716 kB]
+#11 7.112 Get:3 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 python3.12-venv amd64 3.12.3-1ubuntu0.9 [5674 B]
+#11 7.113 Get:4 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 python3-venv amd64 3.12.3-0ubuntu2.1 [1032 B]
+#11 7.202 debconf: delaying package configuration, since apt-utils is not installed
+#11 7.232 Fetched 2430 kB in 1s (2371 kB/s)
+#11 7.257 Selecting previously unselected package python3-pip-whl.
+#11 7.257 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 26915 files and directories currently installed.)
+#11 7.275 Preparing to unpack .../python3-pip-whl_24.0+dfsg-1ubuntu1.3_all.deb ...
+#11 7.283 Unpacking python3-pip-whl (24.0+dfsg-1ubuntu1.3) ...
+#11 7.331 Selecting previously unselected package python3-setuptools-whl.
+#11 7.332 Preparing to unpack .../python3-setuptools-whl_68.1.2-2ubuntu1.2_all.deb ...
+#11 7.340 Unpacking python3-setuptools-whl (68.1.2-2ubuntu1.2) ...
+#11 7.395 Selecting previously unselected package python3.12-venv.
+#11 7.396 Preparing to unpack .../python3.12-venv_3.12.3-1ubuntu0.9_amd64.deb ...
+#11 7.403 Unpacking python3.12-venv (3.12.3-1ubuntu0.9) ...
+#11 7.444 Selecting previously unselected package python3-venv.
+#11 7.446 Preparing to unpack .../python3-venv_3.12.3-0ubuntu2.1_amd64.deb ...
+#11 7.452 Unpacking python3-venv (3.12.3-0ubuntu2.1) ...
+#11 7.501 Setting up python3-setuptools-whl (68.1.2-2ubuntu1.2) ...
+#11 7.521 Setting up python3-pip-whl (24.0+dfsg-1ubuntu1.3) ...
+#11 7.541 Setting up python3.12-venv (3.12.3-1ubuntu0.9) ...
+#11 7.591 Setting up python3-venv (3.12.3-0ubuntu2.1) ...
+#11 9.708 Collecting cloudflarepycli==2.0.2 (from -r /tmp/requirements-docker.txt (line 1))
+#11 9.820   Downloading cloudflarepycli-2.0.2-py3-none-any.whl (33 kB)
+#11 9.886 Collecting pip==25.3 (from -r /tmp/requirements-docker.txt (line 2))
+#11 9.904   Downloading pip-25.3-py3-none-any.whl (1.8 MB)
+#11 10.05      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 12.1 MB/s eta 0:00:00
+#11 10.18 Collecting setuptools==80.9.0 (from -r /tmp/requirements-docker.txt (line 3))
+#11 10.20   Downloading setuptools-80.9.0-py3-none-any.whl (1.2 MB)
+#11 10.28      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 16.5 MB/s eta 0:00:00
+#11 10.31 Collecting wheel==0.45.1 (from -r /tmp/requirements-docker.txt (line 4))
+#11 10.33   Downloading wheel-0.45.1-py3-none-any.whl (72 kB)
+#11 10.34      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 72.5/72.5 kB 11.5 MB/s eta 0:00:00
+#11 10.37 Collecting requests==2.32.5 (from -r /tmp/requirements-docker.txt (line 5))
+#11 10.39   Downloading requests-2.32.5-py3-none-any.whl (64 kB)
+#11 10.40      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 64.7/64.7 kB 24.7 MB/s eta 0:00:00
+#11 10.46 Collecting charset-normalizer==3.4.4 (from -r /tmp/requirements-docker.txt (line 6))
+#11 10.48   Downloading charset_normalizer-3.4.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (153 kB)
+#11 10.49      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 153.5/153.5 kB 17.4 MB/s eta 0:00:00
+#11 10.49 ERROR: THESE PACKAGES DO NOT MATCH THE HASHES FROM THE REQUIREMENTS FILE. If you have updated the package versions, please update the hashes. Otherwise, examine the package contents carefully; someone may have tampered with them.
+#11 10.49     charset-normalizer==3.4.4 from https://files.pythonhosted.org/packages/c0/10/d20b513afe03acc89ec33948320a5544d31f21b05368436d580dec4e234d/charset_normalizer-3.4.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (from -r /tmp/requirements-docker.txt (line 6)):
+#11 10.49         Expected sha256 a8a8b89589086a25749f471e6a900d3f662d1d3b6e2e59dcecf787b1cc3a1894
+#11 10.49              Got        11d694519d7f29d6cd09f6ac70028dba10f92f6cdd059096db198c283794ac86
+#11 10.49 
+#11 ERROR: process "/bin/bash -o pipefail -c echo \"Installing Cloudflare Python Speedtest CLI...\" &&     apt-get update &&     apt-get upgrade -y &&     apt-get install -y --no-install-recommends python3-pip python3-setuptools python3-venv &&     python3 -m venv /opt/venv &&     /opt/venv/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements-docker.txt &&     echo '#!/bin/bash' > /usr/local/bin/cfspeedtest &&     echo '/opt/venv/bin/cfspeedtest \"$@\"' >> /usr/local/bin/cfspeedtest &&     chmod +x /usr/local/bin/cfspeedtest &&     apt-get clean &&     rm -rf /var/lib/apt/lists/*" did not complete successfully: exit code: 1
+------
+ > [ 7/21] RUN echo "Installing Cloudflare Python Speedtest CLI..." &&     apt-get update &&     apt-get upgrade -y &&     apt-get install -y --no-install-recommends python3-pip python3-setuptools python3-venv &&     python3 -m venv /opt/venv &&     /opt/venv/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements-docker.txt &&     echo '#!/bin/bash' > /usr/local/bin/cfspeedtest &&     echo '/opt/venv/bin/cfspeedtest "$@"' >> /usr/local/bin/cfspeedtest &&     chmod +x /usr/local/bin/cfspeedtest &&     apt-get clean &&     rm -rf /var/lib/apt/lists/*:
+10.39   Downloading requests-2.32.5-py3-none-any.whl (64 kB)
+10.40      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 64.7/64.7 kB 24.7 MB/s eta 0:00:00
+10.46 Collecting charset-normalizer==3.4.4 (from -r /tmp/requirements-docker.txt (line 6))
+10.48   Downloading charset_normalizer-3.4.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (153 kB)
+10.49      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 153.5/153.5 kB 17.4 MB/s eta 0:00:00
+10.49 ERROR: THESE PACKAGES DO NOT MATCH THE HASHES FROM THE REQUIREMENTS FILE. If you have updated the package versions, please update the hashes. Otherwise, examine the package contents carefully; someone may have tampered with them.
+10.49     charset-normalizer==3.4.4 from https://files.pythonhosted.org/packages/c0/10/d20b513afe03acc89ec33948320a5544d31f21b05368436d580dec4e234d/charset_normalizer-3.4.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (from -r /tmp/requirements-docker.txt (line 6)):
+10.49         Expected sha256 a8a8b89589086a25749f471e6a900d3f662d1d3b6e2e59dcecf787b1cc3a1894
+10.49              Got        11d694519d7f29d6cd09f6ac70028dba10f92f6cdd059096db198c283794ac86
+10.49 
+------
+Dockerfile:91
+--------------------
+  90 |     COPY requirements-docker.txt /tmp/requirements-docker.txt
+  91 | >>> RUN echo "Installing Cloudflare Python Speedtest CLI..." && \
+  92 | >>>     # Make sure pip is installed
+  93 | >>>     # hadolint ignore=DL3008
+  94 | >>>     apt-get update && \
+  95 | >>>     # Apply security updates
+  96 | >>>     apt-get upgrade -y && \
+  97 | >>>     # hadolint ignore=DL3008
+  98 | >>>     apt-get install -y --no-install-recommends python3-pip python3-setuptools python3-venv && \
+  99 | >>>     # Create a virtual environment for our Python packages
+ 100 | >>>     python3 -m venv /opt/venv && \
+ 101 | >>>     # Install cloudflarepycli from PyPI in the virtual environment
+ 102 | >>>     /opt/venv/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements-docker.txt && \
+ 103 | >>>     # Create a wrapper script for our cfspeedtest command
+ 104 | >>>     echo '#!/bin/bash' > /usr/local/bin/cfspeedtest && \
+ 105 | >>>     echo '/opt/venv/bin/cfspeedtest "$@"' >> /usr/local/bin/cfspeedtest && \
+ 106 | >>>     chmod +x /usr/local/bin/cfspeedtest && \
+ 107 | >>>     # Cleanup
+ 108 | >>>     apt-get clean && \
+ 109 | >>>     rm -rf /var/lib/apt/lists/*
+ 110 |     
+--------------------
+ERROR: failed to build: failed to solve: process "/bin/bash -o pipefail -c echo \"Installing Cloudflare Python Speedtest CLI...\" &&     apt-get update &&     apt-get upgrade -y &&     apt-get install -y --no-install-recommends python3-pip python3-setuptools python3-venv &&     python3 -m venv /opt/venv &&     /opt/venv/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements-docker.txt &&     echo '#!/bin/bash' > /usr/local/bin/cfspeedtest &&     echo '/opt/venv/bin/cfspeedtest \"$@\"' >> /usr/local/bin/cfspeedtest &&     chmod +x /usr/local/bin/cfspeedtest &&     apt-get clean &&     rm -rf /var/lib/apt/lists/*" did not complete successfully: exit code: 1
