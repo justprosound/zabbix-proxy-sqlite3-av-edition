@@ -14,12 +14,10 @@ on:
         default: false
 
 # Security: Minimal required permissions
-permissions:
-  contents: read
-  issues: write
-  security-events: write
+permissions: read-all
 
 jobs:
+
   check-zabbix-version:
     name: Check Zabbix Version Updates
     runs-on: ubuntu-latest
@@ -104,7 +102,7 @@ jobs:
       - name: Extract current Speedtest CLI version
         id: extract_version
         run: |
-          CURRENT_VERSION=$(grep -oP 'ookla-speedtest-\K[0-9]+\.[0-9]+\.[0-9]+(?=-linux-x86_64.tgz)' Dockerfile || echo "")
+          CURRENT_VERSION=$(grep -oP 'ARG OOKLA_VERSION=\K[0-9]+\.[0-9]+\.[0-9]+' Dockerfile || echo "")
           echo "Current Speedtest CLI version: $CURRENT_VERSION"
           echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
 
@@ -170,9 +168,9 @@ jobs:
       - name: Extract current CloudflarePyCLI version
         id: extract_version
         run: |
-          CURRENT_VERSION=$(grep -oP '/opt/venv/bin/pip install --no-cache-dir cloudflarepycli(?:@\K[0-9]+\.[0-9]+\.[0-9]+)?' Dockerfile | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
+          CURRENT_VERSION=$(grep -oP 'cloudflarepycli==\K[0-9]+\.[0-9]+\.[0-9]+' requirements-docker.txt || echo "")
           if [[ -z "$CURRENT_VERSION" ]]; then
-            echo "::warning::No specific version pinned for CloudflarePyCLI, assuming latest"
+            echo "::warning::Could not extract CloudflarePyCLI version from requirements-docker.txt, assuming latest"
             CURRENT_VERSION="latest"
           fi
           echo "Current CloudflarePyCLI version: $CURRENT_VERSION"
@@ -263,7 +261,7 @@ jobs:
 
       - name: Run Anchore scan-action on Dockerfile
         id: scan_dockerfile
-        uses: anchore/scan-action@4aa1ede9cce2f582c0dc0cbf260be508f3ba71de # v6
+        uses: anchore/scan-action@3c9a191a0fbab285ca6b8530b5de5a642cba332f # v7.2.2
         with:
           path: "."
           fail-build: false
