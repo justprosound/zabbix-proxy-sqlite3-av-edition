@@ -3,6 +3,7 @@
 # hadolint global ignore=DL3003,DL3008,DL4001,DL3047,SC2015,SC2016
 ARG ZABBIX_VERSION=ubuntu-7.4.5
 ARG OOKLA_VERSION=1.2.0
+FROM ghcr.io/astral-sh/uv:latest AS uv
 FROM zabbix/zabbix-proxy-sqlite3:${ZABBIX_VERSION}
 
 # Switch to root for installation tasks
@@ -88,8 +89,11 @@ RUN apt-get update && \
 # hadolint ignore=DL3008
 WORKDIR /tmp
 COPY requirements-docker.txt /tmp/requirements-docker.txt
+# Copy uv binary from the stage
+COPY --from=uv /uv /usr/local/bin/uv
+
 RUN echo "Installing Cloudflare Python Speedtest CLI..." && \
-    # Make sure pip is installed
+    # Make sure we have python3 and venv
     # hadolint ignore=DL3008
     apt-get update && \
     # Apply security updates
@@ -98,8 +102,8 @@ RUN echo "Installing Cloudflare Python Speedtest CLI..." && \
     apt-get install -y --no-install-recommends python3-pip python3-setuptools python3-venv && \
     # Create a virtual environment for our Python packages
     python3 -m venv /opt/venv && \
-    # Install cloudflarepycli from PyPI in the virtual environment
-    /opt/venv/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements-docker.txt && \
+    # Install cloudflarepycli using uv (faster, reliable)
+    uv pip install --python /opt/venv -r /tmp/requirements-docker.txt && \
     # Create a wrapper script for our cfspeedtest command
     echo '#!/bin/bash' > /usr/local/bin/cfspeedtest && \
     echo '/opt/venv/bin/cfspeedtest "$@"' >> /usr/local/bin/cfspeedtest && \
