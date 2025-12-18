@@ -28,6 +28,9 @@ jobs:
           sudo wget -O /usr/local/bin/hadolint https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
           sudo chmod +x /usr/local/bin/hadolint
 
+      - name: Run hadolint
+        run: hadolint --ignore DL3008 --ignore DL4001 --ignore DL3047 Dockerfile
+
       - name: Run pre-commit
         uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
 

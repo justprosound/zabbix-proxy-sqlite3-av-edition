@@ -15,18 +15,6 @@ repos:
     # Skip actionlint shellcheck validation completely
     args: ["-shellcheck="]
 
-- repo: https://github.com/hadolint/hadolint
-  rev: v2.14.0
-  hooks:
-  - id: hadolint
-    name: Lint Dockerfiles
-    description: Runs hadolint Docker image linter
-    entry: hadolint
-    language: system
-    types: [dockerfile]
-    exclude: '^vendor/'
-    args: [--ignore, DL3008, --ignore, DL4001, --ignore, DL3047]
-
 - repo: https://github.com/adrienverge/yamllint.git
   rev: v1.37.1
   hooks:
