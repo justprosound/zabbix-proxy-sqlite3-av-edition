@@ -30,7 +30,7 @@ jobs:
       latest_version: ${{ steps.check_version.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
 
       - name: Extract current Zabbix version from Dockerfile
         id: extract_version
@@ -97,7 +97,7 @@ jobs:
       latest_version: ${{ steps.check_version.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
 
       - name: Extract current Speedtest CLI version
         id: extract_version
@@ -158,7 +158,7 @@ jobs:
       latest_version: ${{ steps.check_version.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
@@ -221,7 +221,7 @@ jobs:
       latest_version: ${{ steps.check_version.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
 
       - name: Get current kubectl version
         id: extract_version
@@ -268,7 +268,7 @@ jobs:
       has_vulnerabilities: ${{ steps.check_vuln.outputs.has_vulnerabilities }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
 
       - name: Run Anchore scan-action on Dockerfile
         id: scan_dockerfile
@@ -322,7 +322,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
 
       - name: Create Dependencies Report
         run: |
