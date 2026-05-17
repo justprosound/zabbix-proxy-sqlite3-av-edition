@@ -272,7 +272,7 @@ jobs:
 
       - name: Run Anchore scan-action on Dockerfile
         id: scan_dockerfile
-        uses: anchore/scan-action@3c9a191a0fbab285ca6b8530b5de5a642cba332f # v7.2.2
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
         with:
           path: "."
           fail-build: false
