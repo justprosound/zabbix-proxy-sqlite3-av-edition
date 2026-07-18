@@ -57,7 +57,7 @@ jobs:
 
       # Scan image with Anchore
       - name: Scan image with Anchore
-        uses: anchore/scan-action@4aa1ede9cce2f582c0dc0cbf260be508f3ba71de # v6
+        uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e # v6
         id: anchore_scan
         with:
           image: ${{ steps.vars.outputs.image_to_scan }}
