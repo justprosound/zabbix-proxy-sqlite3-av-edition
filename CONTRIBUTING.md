@@ -62,9 +62,27 @@ Releases are automated via GitHub Actions:
 
 ## 📝 Coding Standards
 
-- **Shell Scripts**: Follow [ShellCheck](https://www.shellcheck.net/) guidelines.
-- **Dockerfile**: Follow best practices for container image creation (minimize layers, clean up cache).
-- **Documentation**: Keep `README.md` and other docs up to date with your changes.
+### Shell Scripts
+- All scripts must pass [ShellCheck](https://www.shellcheck.net/) with zero warnings
+- Use `#!/usr/bin/env bash` shebang with `set -euo pipefail`
+- Use the shared validation module `scripts/validate.sh` for input validation
+- No hardcoded secrets or credentials
+
+### Dockerfile
+- Follow [Docker best practices](https://docs.docker.com/develop/develop-images/dockerfile_best-practices/)
+- Minimize layers and clean up package manager caches
+- Pin base image versions explicitly
+- Use multi-stage builds to reduce final image size
+
+### GitHub Actions
+- Pin all third-party actions to full SHA commit hashes (not tags)
+- Use minimal permissions — grant only what each job requires
+- No secrets in log output
+
+### Documentation
+- Keep `README.md`, `CHANGELOG.md`, and `SECURITY.md` up to date
+- Document breaking changes in `CHANGELOG.md`
+- Reference issues/PRs in commit messages using conventional format
 
 ## 📄 License
 

@@ -30,7 +30,7 @@ jobs:
       latest_version: ${{ steps.check_version.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Extract current Zabbix version from Dockerfile
         id: extract_version
@@ -97,7 +97,7 @@ jobs:
       latest_version: ${{ steps.check_version.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Extract current Speedtest CLI version
         id: extract_version
@@ -158,10 +158,10 @@ jobs:
       latest_version: ${{ steps.check_version.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
 
@@ -183,7 +183,7 @@ jobs:
           CURRENT_VERSION="${{ steps.extract_version.outputs.current_version }}"
 
           # Get latest version from PyPI
-          LATEST_VERSION=$(pip index versions cloudflarepycli 2>/dev/null | grep -oP 'Available versions: \K.*' | tr ',' ' ' | awk '{print $NF}')
+          LATEST_VERSION=$(pip index versions cloudflarepycli 2>/dev/null | grep -oP 'Available versions: \K.*' | tr ',' ' ' | awk '{print $1}')
 
           if [[ -z "$LATEST_VERSION" ]]; then
             echo "::warning::Could not find latest version for CloudflarePyCLI on PyPI"
@@ -221,7 +221,7 @@ jobs:
       latest_version: ${{ steps.check_version.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Get current kubectl version
         id: extract_version
@@ -268,7 +268,7 @@ jobs:
       has_vulnerabilities: ${{ steps.check_vuln.outputs.has_vulnerabilities }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Run Anchore scan-action on Dockerfile
         id: scan_dockerfile
@@ -280,7 +280,7 @@ jobs:
           output-format: sarif
 
       - name: Upload scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v3
+        uses: github/codeql-action/upload-sarif@ddf5ce7296213f5548c91e2dd19df2d77d2b2d66 # v3
         if: success()
         with:
           sarif_file: ${{ steps.scan_dockerfile.outputs.sarif }}
@@ -322,7 +322,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Create Dependencies Report
         run: |

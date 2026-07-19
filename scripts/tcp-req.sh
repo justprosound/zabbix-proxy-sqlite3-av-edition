@@ -1,7 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Input validation
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=validate.sh
+source "${SCRIPT_DIR}/validate.sh"
+
 if [[ $# -ne 3 ]]; then
     echo "Usage: $0 <message> <host> <port>" >&2
     exit 1
@@ -11,31 +14,11 @@ MESSAGE="$1"
 HOST="$2"
 PORT="$3"
 
-# Validate port is numeric and in valid range
-if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [[ "$PORT" -lt 1 ]] || [[ "$PORT" -gt 65535 ]]; then
-    echo "Error: Port must be a number between 1 and 65535" >&2
-    exit 1
-fi
+validate_message_length "$MESSAGE"
+validate_hostname "$HOST"
+validate_port "$PORT"
+validate_tool_exists "nc"
 
-# Validate hostname/IP (basic check)
-if [[ -z "$HOST" ]] || [[ ${#HOST} -gt 253 ]]; then
-    echo "Error: Invalid hostname" >&2
-    exit 1
-fi
-
-# Limit message length to prevent buffer overflow
-if [[ ${#MESSAGE} -gt 4096 ]]; then
-    echo "Error: Message too long (max 4096 characters)" >&2
-    exit 1
-fi
-
-# Use timeout and validate nc is available
-if ! command -v nc >/dev/null 2>&1; then
-    echo "Error: netcat (nc) not found" >&2
-    exit 1
-fi
-
-# Send with stricter timeout and error handling
 echo -n "$MESSAGE" | timeout 5 nc -w1 "$HOST" "$PORT"
 exit_code=$?
 

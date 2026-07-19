@@ -3,7 +3,7 @@
 [![Build & Push](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/ci.yml/badge.svg)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/ci.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/justprosound/zabbix-proxy-sqlite3-av-edition)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
-[![OpenSSF Best Practices](https://bestpractices.coreinfrastructure.org/projects/11554/badge)](https://bestpractices.coreinfrastructure.org/projects/11554)
+[![OpenSSF Best Practices](https://bestpractices.dev/projects/11554/badge)](https://bestpractices.dev/projects/11554)
 
 ## 📋 Overview
 
@@ -159,6 +159,36 @@ docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:7.0.13
 |----------|---------|----------------|
 | `ZBX_PROXYMEMORYBUFFERSIZE` | `16M` | `256M` for AV systems |
 | `ZBX_PROXYMEMORYBUFFERAGE` | `600` | `1800` for better buffering |
+
+---
+
+## 🔒 Security
+
+This project takes security seriously. The container is built with a hardened default configuration and is regularly scanned for vulnerabilities.
+
+### Secure Defaults
+
+- **Non-root execution** (UID 1997) — container does not run as root
+- **Minimal attack surface** — only necessary packages installed, caches cleaned
+- **Remote commands disabled** by default (`ZBX_ENABLEREMOTECOMMANDS=0`)
+- **No plaintext secrets** in images — all credentials passed via environment variables
+
+### Automated Security Tooling
+
+| Tool | Purpose |
+|------|---------|
+| **Trivy** | Container image vulnerability scanning (CI pipeline) |
+| **Anchore/Grype** | SARIF vulnerability reports uploaded to GitHub Security tab |
+| **CodeQL** | Static analysis for GitHub Actions workflows |
+| **OpenSSF Scorecard** | Automated security posture assessment |
+
+### Software Bill of Materials (SBOM)
+
+Every release includes an SBOM in SPDX format, submitted to the GitHub Dependency Graph for automated vulnerability tracking. A custom detailed SBOM with tool versions is also generated.
+
+### Reporting Vulnerabilities
+
+If you discover a security vulnerability, please **do not** open a public issue. Instead, report it privately via [GitHub Security Advisories](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/security/advisories/new). See [SECURITY.md](SECURITY.md) for the full policy.
 
 ---
 

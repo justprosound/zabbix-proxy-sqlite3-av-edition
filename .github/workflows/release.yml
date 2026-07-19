@@ -19,7 +19,7 @@ jobs:
     outputs:
       versions: ${{ steps.detect.outputs.versions }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - name: Detect Zabbix Versions
         id: detect
         run: ./.github/scripts/detect-version.sh 7.0.0
@@ -35,7 +35,7 @@ jobs:
       matrix:
         version: ${{ fromJson(needs.detect-versions.outputs.versions) }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
@@ -73,7 +73,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Create Release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ matrix.version }}
           name: "v${{ matrix.version }}"

@@ -1,0 +1,193 @@
+name: Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild even if image exists'
+        required: false
+        type: boolean
+        default: false
+      run_security_scan:
+        description: 'Run container security scan after build'
+        required: false
+        type: boolean
+        default: false
+
+permissions: read-all
+
+jobs:
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.x'
+      - name: Install hadolint
+        run: |
+          sudo wget -O /usr/local/bin/hadolint https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+          sudo chmod +x /usr/local/bin/hadolint
+      - name: Run hadolint
+        run: hadolint --ignore DL3008 --ignore DL4001 --ignore DL3047 --ignore DL3007 Dockerfile
+      - name: Run yamllint
+        run: |
+          pip install yamllint
+          yamllint -d '{extends: relaxed, rules: {line-length: {max: 1200, allow-non-breakable-inline-mappings: true}}}' .
+
+  test-scripts:
+    name: Test Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Run wrapper script tests
+        run: ./scripts/test_wrappers.sh
+
+  detect-versions:
+    name: Detect Versions
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.detect.outputs.versions }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Detect Zabbix Versions
+        id: detect
+        run: ./.github/scripts/detect-version.sh 7.0.0
+
+  build-test:
+    name: Build Test
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build container (test)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: false
+          tags: test-image:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-release:
+    name: Build Release
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: [lint, detect-versions]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJson(needs.detect-versions.outputs.versions) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Check if image exists
+        id: check_image
+        if: github.event_name == 'schedule' || inputs.force_rebuild != true
+        run: |
+          echo "Checking if image exists for version ${{ matrix.version }}"
+          echo "exists=false" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            ZABBIX_VERSION=ubuntu-${{ matrix.version }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ matrix.version }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ matrix.version }}
+          name: "v${{ matrix.version }}"
+          generate_release_notes: true
+
+  security-scan:
+    name: Security Scan
+    if: inputs.run_security_scan == true
+    needs: build-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJson(needs.detect-versions.outputs.versions) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set environment variables
+        id: vars
+        run: |
+          REPO_OWNER="${{ github.repository_owner }}"
+          REPO_NAME="${{ github.repository }}"
+          REPO_NAME="${REPO_NAME#*/}"
+          IMAGE="ghcr.io/${REPO_OWNER}/${REPO_NAME}:${{ matrix.version }}"
+          echo "image_to_scan=$IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull container image
+        run: docker pull ${{ steps.vars.outputs.image_to_scan }}
+
+      - name: Scan image with Anchore
+        uses: anchore/scan-action@3c9a191a0fbab285ca6b8530b5de5a642cba332f # v7.2.2
+        id: anchore_scan
+        with:
+          image: ${{ steps.vars.outputs.image_to_scan }}
+          fail-build: true
+          severity-cutoff: high
+          output-format: sarif
+
+      - name: Upload scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@ddf5ce7296213f5548c91e2dd19df2d77d2b2d66 # v3
+        if: success()
+        with:
+          sarif_file: ${{ steps.anchore_scan.outputs.sarif }}
+          category: "anchore-${{ matrix.version }}"
