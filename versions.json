@@ -1,0 +1,66 @@
+{
+  "tools": [
+    {
+      "name": "zabbix",
+      "display_name": "Zabbix",
+      "current_source": {
+        "type": "regex",
+        "file": "Dockerfile",
+        "pattern": "ARG ZABBIX_VERSION=ubuntu-([0-9]+\\.[0-9]+\\.[0-9]+)"
+      },
+      "check_method": {
+        "type": "zabbix_api",
+        "api_url": "https://services.zabbix.com/updates/v1",
+        "extract_major_minor": true
+      },
+      "update_action": "Update ARG ZABBIX_VERSION in Dockerfile",
+      "section": "Core"
+    },
+    {
+      "name": "ookla-speedtest",
+      "display_name": "Speedtest CLI",
+      "current_source": {
+        "type": "regex",
+        "file": "Dockerfile",
+        "pattern": "ARG OOKLA_VERSION=([0-9]+\\.[0-9]+\\.[0-9]+)"
+      },
+      "check_method": {
+        "type": "web_scrape",
+        "url": "https://install.speedtest.net/app/cli/",
+        "extract_pattern": "ookla-speedtest-([0-9]+\\.[0-9]+\\.[0-9]+)-linux-x86_64.tgz"
+      },
+      "update_action": "Update ARG OOKLA_VERSION in Dockerfile",
+      "section": "Performance"
+    },
+    {
+      "name": "cloudflarepycli",
+      "display_name": "CloudflarePyCLI",
+      "current_source": {
+        "type": "regex",
+        "file": "requirements-docker.txt",
+        "pattern": "cloudflarepycli==([0-9]+\\.[0-9]+\\.[0-9]+)"
+      },
+      "check_method": {
+        "type": "pypi",
+        "package": "cloudflarepycli"
+      },
+      "update_action": "Pin version in requirements-docker.txt",
+      "section": "Performance"
+    },
+    {
+      "name": "kubectl",
+      "display_name": "kubectl",
+      "current_source": {
+        "type": "regex",
+        "file": "Dockerfile",
+        "pattern": "ARG KUBECTL_VERSION=(v[0-9]+\\.[0-9]+\\.[0-9]+)"
+      },
+      "check_method": {
+        "type": "kubernetes_release",
+        "stable_url": "https://dl.k8s.io/release/stable.txt"
+      },
+      "update_action": "Update ARG KUBECTL_VERSION in Dockerfile",
+      "section": "Kubernetes"
+    }
+  ]
+}

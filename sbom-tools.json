@@ -1,0 +1,113 @@
+{
+  "tools": [
+    {
+      "name": "zabbix-proxy-sqlite3",
+      "command": "zabbix_proxy -V 2>&1 | head -1",
+      "section": "Core Monitoring Tools"
+    },
+    {
+      "name": "ookla-speedtest",
+      "command": "speedtest --version 2>&1 | head -1",
+      "section": "Performance Testing Tools"
+    },
+    {
+      "name": "cloudflare-speedtest",
+      "command": "/opt/venv/bin/cfspeedtest --version 2>&1",
+      "section": "Performance Testing Tools"
+    },
+    {
+      "name": "ping",
+      "command": "ping --version 2>&1 | head -1",
+      "section": "Network Diagnostic Tools"
+    },
+    {
+      "name": "traceroute",
+      "command": "traceroute --version 2>&1 | head -1",
+      "section": "Network Diagnostic Tools"
+    },
+    {
+      "name": "mtr",
+      "command": "mtr --version 2>&1 | head -1",
+      "section": "Network Diagnostic Tools"
+    },
+    {
+      "name": "fping",
+      "command": "fping --version 2>&1 | head -1",
+      "section": "Network Diagnostic Tools"
+    },
+    {
+      "name": "dig",
+      "command": "dig -v 2>&1 | head -1",
+      "section": "DNS Tools"
+    },
+    {
+      "name": "nmap",
+      "command": "nmap --version 2>&1 | head -1",
+      "section": "Network Discovery Tools"
+    },
+    {
+      "name": "nc",
+      "command": "nc -h 2>&1 | head -1",
+      "section": "Network Connectivity Tools"
+    },
+    {
+      "name": "tcpdump",
+      "command": "tcpdump --version 2>&1 | head -1",
+      "section": "Packet Analysis Tools"
+    },
+    {
+      "name": "snmpwalk",
+      "command": "snmpwalk --version 2>&1 | head -1",
+      "section": "SNMP Monitoring Tools"
+    },
+    {
+      "name": "snmpget",
+      "command": "snmpget --version 2>&1 | head -1",
+      "section": "SNMP Monitoring Tools"
+    },
+    {
+      "name": "kubectl",
+      "command": "kubectl version --client --short 2>&1 | head -1",
+      "section": "Kubernetes Management Tools"
+    },
+    {
+      "name": "jq",
+      "command": "jq --version 2>&1",
+      "section": "Data Processing Tools"
+    },
+    {
+      "name": "jo",
+      "command": "jo --version 2>&1",
+      "section": "Data Processing Tools"
+    },
+    {
+      "name": "curl",
+      "command": "curl --version 2>&1 | head -1",
+      "section": "Download and Transfer Tools"
+    },
+    {
+      "name": "wget",
+      "command": "wget --version 2>&1 | head -1",
+      "section": "Download and Transfer Tools"
+    },
+    {
+      "name": "nano",
+      "command": "nano --version 2>&1 | head -1",
+      "section": "Text Editors"
+    }
+  ],
+  "sections": {
+    "Core Monitoring Tools": "Core Zabbix proxy and monitoring capabilities",
+    "Performance Testing Tools": "Network speed and performance testing utilities",
+    "Network Diagnostic Tools": "Network connectivity and routing diagnostics",
+    "DNS Tools": "Domain name resolution and DNS utilities",
+    "Network Discovery Tools": "Network scanning and host discovery",
+    "Network Connectivity Tools": "Direct network connectivity testing",
+    "Packet Analysis Tools": "Network packet capture and analysis",
+    "SNMP Monitoring Tools": "SNMP protocol utilities for device monitoring",
+    "Kubernetes Management Tools": "Container orchestration management",
+    "Data Processing Tools": "JSON and data processing utilities",
+    "Download and Transfer Tools": "File transfer and download utilities",
+    "Text Editors": "Text editing utilities"
+  }
+}
