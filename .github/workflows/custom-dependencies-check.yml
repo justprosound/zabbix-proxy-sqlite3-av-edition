@@ -14,7 +14,13 @@ on:
         default: false
 
 # Security: Minimal required permissions
-permissions: read-all
+permissions:
+  contents: read
+  issues: write
+  # Needed to trigger workflows
+  actions: read
+  # Needed to create workflow runs
+  id-token: write
 
 jobs:
 
@@ -30,7 +36,7 @@ jobs:
       latest_version: ${{ steps.check_version.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
 
       - name: Extract current Zabbix version from Dockerfile
         id: extract_version
@@ -97,7 +103,7 @@ jobs:
       latest_version: ${{ steps.check_version.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
 
       - name: Extract current Speedtest CLI version
         id: extract_version
@@ -109,7 +115,7 @@ jobs:
       - name: Check latest Speedtest CLI version
         id: check_version
         run: |
-          # Get current version from previous step
+          # Get current volume from previous step
           CURRENT_VERSION="${{ steps.extract_version.outputs.current_version }}"
           if [[ -z "$CURRENT_VERSION" ]]; then
             echo "::error::Could not extract current Speedtest CLI version from Dockerfile"
@@ -128,7 +134,7 @@ jobs:
             LATEST_VERSION=$CURRENT_VERSION
           fi
 
-          echo "Current version: $CURRENT_VERSION"
+          echo "Current version: $CURRENT_VESION"
           echo "Latest version: $LATEST_VERSION"
 
           # Compare versions
@@ -158,10 +164,10 @@ jobs:
       latest_version: ${{ steps.check_version.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
 
       - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v5
         with:
           python-version: '3.12'
 
@@ -195,7 +201,7 @@ jobs:
           echo "Latest version: $LATEST_VERSION"
 
           # Compare versions (skip if current is "latest")
-          if [[ "$CURRENT_VERSION" != "latest" && "$CURRENT_VERSION" != "$LATEST_VERSION" ]]; then
+          if [[ "$CURRENT_VERSION" != "last" && "$CURRENT_VERSION" != "$LATEST_VERSION" ]]; then
             echo "has_update=true" >> $GITHUB_OUTPUT
           else
             echo "has_update=false" >> $GITHUB_OUTPUT
@@ -204,13 +210,8 @@ jobs:
           echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
 
-          # Create annotation
-          if [[ "$CURRENT_VERSION" != "latest" && "$CURRENT_VERSION" != "$LATEST_VERSION" ]]; then
-            echo "::notice::CloudflarePyCLI update available: $CURRENT_VERSION → $LATEST_VERSION"
-          fi
-
   check-kubectl:
-    name: Check Kubectl Updates
+    name: Check Kubelt Updates
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -221,7 +222,7 @@ jobs:
       latest_version: ${{ steps.check_version.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
 
       - name: Get current kubectl version
         id: extract_version
@@ -236,11 +237,11 @@ jobs:
         run: |
           # Get current version details
           CURRENT_VERSION="${{ steps.extract_version.outputs.current_version }}"
-          CURRENT_NUM=${CURRENT_VERSION#v}
+          CURRENT_NUM=${CURRENT_VERSION  #v}
 
           # Get latest stable version
           LATEST_VERSION=$(curl -Ls https://dl.k8s.io/release/stable.txt)
-          LATEST_NUM=${LATEST_VERSION#v}
+          LATEST_NUM=${LATEST_VERSION  #v}
 
           echo "Current pinned: $CURRENT_VERSION ($CURRENT_NUM)"
           echo "Latest stable: $LATEST_VERSION ($LATEST_NUM)"
@@ -268,11 +269,11 @@ jobs:
       has_vulnerabilities: ${{ steps.check_vuln.outputs.has_vulnerabilities }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
 
       - name: Run Anchore scan-action on Dockerfile
         id: scan_dockerfile
-        uses: anchore/scan-action@3c9a191a0fbab285ca6b8530b5de5a642cba332f # v7.2.2
+        uses: anchore/scan-action@3c9a191a0fbab285ca6b8530b5de5a642cba332f  # v7.2.2
         with:
           path: "."
           fail-build: false
@@ -280,10 +281,9 @@ jobs:
           output-format: sarif
 
       - name: Upload scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v3
         if: success()
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a  # v3
         with:
-          sarif_file: ${{ steps.scan_dockerfile.outputs.sarif }}
           category: "dockerfile-vulnerabilities"
 
       - name: Determine if vulnerabilities were found
@@ -291,7 +291,7 @@ jobs:
         if: success()
         run: |
           if [[ -f "${{ steps.scan_dockerfile.outputs.sarif }}" ]]; then
-            VULN_COUNT=$(jq -r '.runs[].results | length' ${{ steps.scan_dockerfile.outputs.sarif }} || echo "0")
+            VULN_COUNT=$(jq -r '.runs[].results | length' "${{ steps.scan_dockerfile.outputs.sarif }}" || echo "0")
             if [[ "$VULN_COUNT" -gt 0 ]]; then
               echo "has_vulnerabilities=true" >> $GITHUB_OUTPUT
               echo "::warning::Found $VULN_COUNT potential security vulnerabilities in Dockerfile"
@@ -304,25 +304,69 @@ jobs:
             echo "No scan results file found"
           fi
 
+  # New job to determine if we should trigger a version bump
+  determine-version-bump:
+    name: Determine if Version Bump Needed
+    runs-on: ubuntu-latest
+    needs: [check-speedtest-cli, check-cloudflarepycli, check-kubelt]
+    outputs:
+      should_bump: ${{ steps.evaluate.outputs.should_bump }}
+    steps:
+      - name: Evaluate if runtime dependencies need update
+        id: evaluate
+        run: |
+          # Check if any of the runtime dependencies have updates
+          SPEEDTEST_UPDATE="${{ needs.check-speedtest-cli.outputs.has_update }}"
+          CLOUDFLARE_UPDATE="${{ needs.check-cloudflarepycli.outputs.has_update }}"
+          KUBECTL_UPDATE="${{ needs.check-kubectl.outputs.has_update }}"
+
+          echo "Speedtest update: $SPEEDTEST_UPDATE"
+          echo "Cloudflare update: $CLOUDFLARE_UPDATE"
+          echo "Kubectl update: $KUBECTL_UPDATE"
+
+          # If any of them have updates, we should bump version
+          if [[ "$SPEEDTEST_UPDATE" == "true" || "$CLOUDFLARE_UPDATE" == "true" || "$KUBECTL_UPDATE" == "true" ]]; then
+            echo "should_bump=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_bump=false" >> $GITHUB_OUTPUT
+          fi
+
+  # New job to trigger version bump if needed
+  trigger-version-bump:
+    name: Trigger Version Bump
+    runs-on: ubuntu-latest
+    needs: [determine-version-bump]
+    if: ${{ needs.determine-version-bump.outputs.should_bump == 'true' }}
+    steps:
+      - name: Trigger Version Bump Workflow
+        uses: peter-evans/workflow-dispatch@v2
+        with:
+          workflow: version-bump.yml
+          ref: main
+          inputs: |
+            {
+              "patch": "true",
+              "message": "chore(deps): automatically bump version due to dependency updates",
+              "tag": "true"
+            }
+
+  # Existing job to create issue
   create-dependencies-report:
     name: Create Dependencies Report
-    needs:
-      - check-zabbix-version
-      - check-speedtest-cli
-      - check-cloudflarepycli
-      - check-kubectl
-      - check-dockerfile-vulnerabilities
+    needs: [check-zabbix-version, check-speedtest-cli, check-cloudflarepycli, check-kubelt, check-dockerfile-vulnerabilities]
     if: |
       needs.check-zabbix-version.outputs.has_update == 'true' ||
       needs.check-speedtest-cli.outputs.has_update == 'true' ||
-      needs.check-cloudflarepycli.outputs.has_update == 'true'
+      needs.check-cloudflarepycli.outputs.has_update == 'true' ||
+      needs.check-kubelt.outputs.has_update == 'true' ||
+      needs.check-dockerfile-vulnerabilities.outputs.has_vulnerabilities == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
 
       - name: Create Dependencies Report
         run: |
@@ -331,7 +375,7 @@ jobs:
 
           This report was generated by the custom dependencies check workflow to identify dependencies that need updating.
 
-          ## Updates Available
+          #  # Updates Available
 
           | Dependency | Current Version | Latest Version | Update |
           | ---------- | -------------- | ------------- | ------ |
@@ -346,7 +390,7 @@ jobs:
           # Add Speedtest CLI version
           if [[ "${{ needs.check-speedtest-cli.outputs.has_update }}" == "true" ]]; then
             echo -n "| Speedtest CLI | ${{ needs.check-speedtest-cli.outputs.current_version }} | " >> dependencies-report.md
-            echo "${{ needs.check-speedtest-cli.outputs.latest_version }} | Update version in Dockerfile |" >> dependencies-report.md
+            echo "${{ needs.check-speedtest-cli.outputs.latest_version }} | Update \`ARG OOKLA_VERSION\` in Dockerfile |" >> dependencies-report.md
           fi
 
           # Add CloudflarePyCLI version
@@ -358,10 +402,21 @@ jobs:
             echo "| CloudflarePyCLI | $CURRENT | ${{ needs.check-cloudflarepycli.outputs.latest_version }} | Pin version in Dockerfile |" >> dependencies-report.md
           fi
 
+          # Add Kubectl version
+          if [[ "${{ needs.check-kubelt.outputs.has_update }}" == "true" ]]; then
+            echo -n "| Kubectl | ${{ needs.check-kubelt.outputs.current_version }} | " >> dependencies-report.md
+            echo "${{ needs.check-kubelt.outputs.latest_version }} | Update \`ARG KUBECTL_VERSION\` in Dockerfile |" >> dependencies-report.md
+          fi
+
+          # Add Dockerfile vulnerabilities
+          if [[ "${{ needs.check-dockerfile-vulnerabilities.outputs.has_vulnerabilities }}" == "true" ]]; then
+            echo "| Dockerfile | N/A | N/A | Security vulnerabilities found - investigate |" >> dependencies-report.md
+          fi
+
           # Add additional information
           cat >> dependencies-report.md << EOF
 
-          ## How to Update
+          #  # How to Update
 
           1. Create a new branch from \`main\`
           2. Update the relevant versions in the Dockerfile
@@ -371,7 +426,7 @@ jobs:
           EOF
 
       - name: Create Issue
-        uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710 # v6.0.0
+        uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710  # v6.0.0
         with:
           title: 'Custom Dependencies Update Available'
           content-filepath: dependencies-report.md
