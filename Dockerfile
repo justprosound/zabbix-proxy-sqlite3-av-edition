@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Zabbix Proxy SQLite3 AV Edition
 # Global hadolint ignore directives
 # hadolint global ignore=DL3002,DL3003,DL3008,DL4001,DL3047,DL4006,SC2015,SC2016
-ARG ZABBIX_VERSION=ubuntu-7.4.5
+ARG ZABBIX_VERSION=ubuntu-7.4.12
 ARG OOKLA_VERSION=1.2.0
 
 # =============================================================================
