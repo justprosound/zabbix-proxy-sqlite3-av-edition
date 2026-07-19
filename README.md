@@ -4,6 +4,9 @@
 [![GitHub Release](https://img.shields.io/github/v/release/justprosound/zabbix-proxy-sqlite3-av-edition)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
 [![OpenSSF Best Practices](https://bestpractices.coreinfrastructure.org/projects/11554/badge)](https://bestpractices.coreinfrastructure.org/projects/11554)
+[![Dependabot](https://img.shields.io/badge/Dependabot-enabled-brightgreen.svg)](https://dependabot.com/)
+[![Renovate](https://img.shields.io/badge/Renovate-enabled-brightgreen.svg)](https://renovatebot.com/)
+[![Security Scan](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/schedule-security.yml/badge.svg)](https://github.com/justprosound/zabbix-proxy-sqlite3-av-edition/actions/workflows/schedule-security.yml)
 
 ## 📋 Overview
 
@@ -18,6 +21,7 @@ A specialized Zabbix Proxy container built on SQLite3, enhanced and optimized fo
 - � **Automated MIB Management**: Auto-downloading of vendor-specific SNMP MIBs
 - �🐳 **Container-Ready**: Optimized container image with health checks
 - 🔒 **Security-Hardened**: Non-root execution with minimal attack surface
+- 📋 **Software Bill of Materials**: Automated SBOM generation and submission
 
 ### 🏗️ Based On
 
@@ -66,11 +70,11 @@ services:
       ZBX_SERVER_HOST: your-zabbix-server.example.com
       ZBX_HOSTNAME: av-proxy-01
       ZBX_PROXYMODE: 0
-      ZBX_SERVER_PORT: 10051
-      ZBX_PROXYBUFFERMODE: hybrid
-      ZBX_PROXYMEMORYBUFFERAGE: 1800
-      ZBX_PROXYMEMORYBUFFERSIZE: 256M
-      ZBX_ENABLEREMOTECOMMANDS: 1
+      -e ZBX_SERVER_PORT=10051 \
+      -e ZBX_PROXYBUFFERMODE=hybrid \
+      -e ZBX_PROXYMEMORYBUFFERAGE=1800 \
+      -e ZBX_PROXYMEMORYBUFFERSIZE=256M \
+      -e ZBX_ENABLEREMOTECOMMANDS=1 \
     volumes:
       - zabbix-db:/var/lib/zabbix
     healthcheck:
@@ -106,6 +110,7 @@ Historical versions (7.0.0+) can be built on demand using the "Build Historical 
 ### 🐳 Container Registries
 
 #### GitHub Container Registry (Recommended)
+
 ```bash
 # Pull the latest version (highest version number)
 docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:latest
@@ -139,7 +144,6 @@ docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:7.0.13
 |--------|---------|-------|
 | `k.sh` | Kubernetes command wrapper | Execute kubectl commands via Zabbix |
 | `tcp-req.sh` | TCP request utility | Send custom TCP requests for testing |
-| `pass-to-shell.sh` | Shell command passthrough | Execute system commands securely |
 
 ### 🔧 Configuration
 
@@ -162,16 +166,45 @@ docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:7.0.13
 
 ---
 
+## 🛡️ Supply Chain Security & SBOM
+
+This project implements comprehensive supply chain security measures:
+
+### Software Bill of Materials (SBOM)
+- **Automated Generation**: Every release includes SBOMs in both SPDX and CycloneDX formats
+- **GitHub Integration**: SPDX SBOM automatically submitted to GitHub Dependency Graph for vulnerability scanning
+- **Release Assets**: SBOM files attached to each GitHub release for downstream consumption
+- **Formats**:
+  - SPDX JSON (for GitHub Dependency Graph)
+  - CycloneDX XML (for broad tool compatibility)
+
+### Dependency Management
+- **Dependabot**: Automated updates for GitHub Actions and Python dependencies
+- **Renovate**: Automated updates for Dockerfile configurations (Kubectl, etc.)
+- **Custom Workflows**: Weekly checks for Zabbix core, Speedtest CLI, Cloudflare PySpeedTest, and Kubectl versions
+- **License Compliance**: Automated verification of dependency licenses
+
+### Security Scanning
+- **Container Images**: Weekly Trivy scans for vulnerabilities, secrets, and misconfigurations
+- **Source Code**: GitHub CodeQL analysis for potential security vulnerabilities
+- **SBOM Submission**: Automatic submission to GitHub Dependency Graph for continuous monitoring
+- **Custom Scripts**: Security-hardened with input validation and least-privilege execution
+
+---
+
 ## 🏗️ Development & Contribution
 
 ### 🔄 Automated Workflows
 - ✅ **Pre-commit hooks** for code quality assurance
 - 🔄 **Mend Renovate** for dependency management
+- 🤖 **Dependabot** for automated dependency updates
 - 📝 **Automated documentation** updates for version changes
 - 🏗️ **CI/CD pipeline** with multi-architecture builds
 - 🚀 **Automatic releases** for each upstream Zabbix version
 - 🏷️ **Smart versioning** with local change tracking
 - 🧹 **Consolidated workflows** for better maintainability
+- 🔒 **Scheduled Security Scans**: Weekly Trivy scans with GitHub Security alerts
+- 📋 **SBOM Generation**: Automatic creation and submission with every release
 
 ### 📦 Release Strategy
 
@@ -185,20 +218,24 @@ docker pull ghcr.io/justprosound/zabbix-proxy-sqlite3-av-edition:7.0.13
 - 🔧 **Local changes detected** → Patch version increment (e.g., `7.0.13` → `7.0.13.1`)
 - 📋 **Release notes** → Generated with change summaries and usage instructions
 - 🏷️ **Container tags** → Multiple tags per release (`latest`, `7.0`, `7.0.13`)
+- 📎 **SBOM Assets** → SPDX and CycloneDX SBOMs attached to each release
+- 🔗 **Dependency Graph** → SPDX SBOM automatically submitted for vulnerability monitoring
 
 **Release Management**:
 - 🎯 **LTS marking** → Latest major.0 version marked as "lts"
 - 📋 **Manual releases** → Workflow dispatch for custom versions
 - 🚀 **Automatic releases** when new Zabbix versions are detected
+- 🔍 **Security Gates**: Release workflow includes vulnerability scanning before publication
 
 ### 🛡️ Security Features
 - 🚫 **Non-root execution** (UID 1997)
 - 🔒 **Minimal attack surface** with cleaned dependencies
 - 🔍 **Regular security scans** via automated tools
-- � **Software Bill of Materials (SBOM)** in multiple formats:
+- 📋 **Software Bill of Materials (SBOM)** in multiple formats:
   - Custom detailed SBOM with tool versions
   - SPDX format submitted to GitHub dependency graph
 - �📋 **Health checks** for container monitoring
+- 🧪 **Runtime Security**: Container runs with dropped capabilities and read-only root filesystem where possible
 
 ### 📋 System Requirements
 - **Memory**: Minimum 512MB RAM (1GB+ recommended for AV environments)

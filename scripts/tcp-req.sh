@@ -46,3 +46,4 @@ elif [[ $exit_code -ne 0 ]]; then
     echo "Error: Connection failed" >&2
     exit 1
 fi
+

@@ -1,0 +1,50 @@
+name: Scheduled Security Scan
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Every Monday at 02:00 UTC
+  workflow_dispatch:
+
+jobs:
+  trivy-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build test image (for scanning)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: security-scan:latest
+      - name: Run Trivy Scan
+        uses: aquasecurity/trivy-action@0.23.0
+        with:
+          image-ref: 'security-scan:latest'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          ignore-unfixed: true
+          severity: 'HIGH,CRITICAL'
+          scanners: 'vuln,secret,config'
+      - name: Upload to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy-weekly'
+      - name: Generate human-readable report
+        if: always()
+        run: |
+          trivy image --format table security-scan:latest > security-report.txt || true
+      - name: Upload security report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: security-report.txt
+          retention-days: 30
+

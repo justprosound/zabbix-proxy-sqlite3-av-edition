@@ -55,3 +55,4 @@ fi
 
 # Execute with timeout to prevent hanging
 timeout 30 kubectl "$@"
+

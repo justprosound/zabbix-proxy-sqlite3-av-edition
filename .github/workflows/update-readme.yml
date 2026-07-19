@@ -1,0 +1,52 @@
+name: Update README Version Table
+
+on:
+  push:
+    branches: [main]
+    paths: ['VERSION']
+  schedule:
+    - cron: '0 3 * * 1'  # Weekly on Monday at 03:00 UTC
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Get Project Version
+        id: version
+        run: |
+          echo "VERSION=$(cat VERSION)" >> $GITHUB_OUTPUT
+      - name: Get Latest Zabbix Version
+        id: zabbix
+        run: |
+          LATEST=$(curl -s https://hub.docker.com/v2/repositories/zabbix/zabbix-proxy-sqlite3/tags?page_size=100 |
+                   jq -r '.results[] | select(.name | test("^ubuntu-[0-9]+\\.[0-9]+\\.[0-9]+$")) | .name |
+                   capture("ubuntu-(?<version>[0-9]+\\.[0-9]+\\.[0-9]+)").version' |
+                   sort -Vr | head -1)
+          echo "LATEST_ZABBIX=$LATEST" >> $GITHUB_OUTPUT
+      - name: Update README
+        run: |
+            # Update version table in README
+            # Current table has:
+            # | **7.0.13** | \`lts\`, \`7.0.13\`, \`7.0\` | ✅ **Long-Term Support** |
+            # | **7.2.x** | \`latest\`, \`7.2.x\`, \`7.2\` | ✅ Latest Features |
+
+            # Update the first row (7.0.13) to show current project version as latest
+          sed -i "s/| \*\*7.0.13\*\* | \`lts\`, \`7.0.13\`, \`7.0\` | ✅ \*\*Long-Term Support\*\* |/| \*\*${{ steps.version.outputs.VERSION }}\*\* | \`latest\`, \`${{ steps.version.outputs.VERSION }}\` | ✅ \*\*Current\*\* |/" README.md
+
+            # Update the second row (7.2.x) to show the LTS version
+          sed -i "s/| \*\*7.2.x\*\* | \`latest\`, \`7.2.x\`, \`7.2\` | ✅ Latest Features |/| \*\*7.0.13\*\* | \`lts\`, \`7.0.13\`, \`7.0\` | ✅ \*\*Long-Term Support\*\* |/" README.md
+
+            # Add a note that the table is automatically updated
+          if ! grep -q "This table is automatically updated" README.md; then
+            sed -i '/  #  # 📦 Available Versions/a > *This table is automatically updated by the Update README Version Table workflow*' README.md
+          fi
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: update version table"
+          branch: main
+

@@ -26,7 +26,7 @@ jobs:
       security-events: write  # For security scanning
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
         with:
           fetch-depth: 1
 
@@ -37,14 +37,14 @@ jobs:
           IMAGE_TAG="${{ inputs.image_tag }}"
           REPO_OWNER="${{ github.repository_owner }}"
           REPO_NAME="${{ github.repository }}"
-          REPO_NAME="${REPO_NAME#*/}"
+          REPO_NAME="${REPO_NAME  #*/}"
 
           echo "Scanning image: ghcr.io/${REPO_OWNER}/${REPO_NAME}:${IMAGE_TAG}"
           echo "image_to_scan=ghcr.io/${REPO_OWNER}/${REPO_NAME}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
       # Login to GitHub Container Registry
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -57,7 +57,7 @@ jobs:
 
       # Scan image with Anchore
       - name: Scan image with Anchore
-        uses: anchore/scan-action@4aa1ede9cce2f582c0dc0cbf260be508f3ba71de # v6
+        uses: anchore/scan-action@4aa1ede9cce2f582c0dc0cbf260be508f3ba71de  # v6
         id: anchore_scan
         with:
           image: ${{ steps.vars.outputs.image_to_scan }}
@@ -67,7 +67,7 @@ jobs:
 
       # Upload scan results to GitHub Security tab
       - name: Upload Anchore scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v3
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a  # v3
         with:
           sarif_file: ${{ steps.anchore_scan.outputs.sarif }}
           category: "anchore-${{ inputs.image_tag }}"
@@ -76,20 +76,20 @@ jobs:
       - name: Generate vulnerability report
         if: always()
         run: |
-          echo "# Container Vulnerability Scan Results" > vulnerability-report.md
-          echo "## Image: ${{ steps.vars.outputs.image_to_scan }}" >> vulnerability-report.md
-          echo "## Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> vulnerability-report.md
-          echo "## Scan Status: ${{ steps.anchore_scan.outcome }}" >> vulnerability-report.md
-          echo "## Severity Cutoff: ${{ inputs.severity_cutoff }}" >> vulnerability-report.md
+          echo "  # Container Vulnerability Scan Results" > vulnerability-report.md
+          echo "  ## Image: ${{ steps.vars.outputs.image_to_scan }}" >> vulnerability-report.md
+          echo "  ## Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> vulnerability-report.md
+          echo "  ## Scan Status: ${{ steps.anchore_scan.outcome }}" >> vulnerability-report.md
+          echo "  ## Severity Cutoff: ${{ inputs.severity_cutoff }}" >> vulnerability-report.md
           echo "" >> vulnerability-report.md
 
           if [[ -f "${{ steps.anchore_scan.outputs.json }}" ]]; then
-            echo "### Vulnerabilities Found" >> vulnerability-report.md
+            echo "  ##  # Vulnerabilities Found" >> vulnerability-report.md
             echo '```json' >> vulnerability-report.md
             jq -r '.matches | length' ${{ steps.anchore_scan.outputs.json }} >> vulnerability-report.md
             echo '```' >> vulnerability-report.md
 
-            echo "### Summary by Severity" >> vulnerability-report.md
+            echo "  ##  # Summary by Severity" >> vulnerability-report.md
             echo '```' >> vulnerability-report.md
             jq -r '.matches[] | .vulnerability.severity' ${{ steps.anchore_scan.outputs.json }} | sort | uniq -c >> vulnerability-report.md
             echo '```' >> vulnerability-report.md
@@ -100,7 +100,7 @@ jobs:
       # Upload vulnerability report as artifact
       - name: Upload vulnerability report
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v4
         with:
           name: vulnerability-report-${{ inputs.image_tag }}
           path: vulnerability-report.md

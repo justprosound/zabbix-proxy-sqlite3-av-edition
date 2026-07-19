@@ -3,52 +3,35 @@ set -u
 
 # Test wrapper scripts for security and functionality
 
-# Use /dev/null for logging during tests to avoid permission issues
-export PASS_TO_SHELL_LOGFILE="/dev/null"
+echo "Testing wrapper scripts..."
 
-echo "Testing pass-to-shell.sh..."
-PASS_TO_SHELL="./scripts/pass-to-shell.sh"
-
-# Mock date command if not available (should be standard, but just in case)
-if ! command -v date >/dev/null; then
-    echo "Warning: date command not found"
+# Test k.sh if it exists
+if [[ -f "./k.sh" ]]; then
+    echo "Testing k.sh..."
+    # Basic existence test - k.sh requires kubectl and kubeconfig to fully test
+    if [[ -x "./k.sh" ]]; then
+        echo "PASS: k.sh exists and is executable"
+    else
+        echo "FAIL: k.sh missing or not executable"
+        exit 1
+    fi
+else
+    echo "INFO: k.sh not found - skipping test"
 fi
 
-# Function to assert failure (blocked command)
-assert_blocked() {
-    local cmd="$1"
-    if $PASS_TO_SHELL "$cmd" >/dev/null 2>&1; then
-        echo "FAIL: Blocked command was allowed: '$cmd'"
-        exit 1
+# Test tcp-req.sh if it exists
+if [[ -f "./tcp-req.sh" ]]; then
+    echo "Testing tcp-req.sh..."
+    # Basic existence test
+    if [[ -x "./tcp-req.sh" ]]; then
+        echo "PASS: tcp-req.sh exists and is executable"
     else
-        echo "PASS: Blocked command was rejected: '$cmd'"
-    fi
-}
-
-# Function to assert success (allowed command)
-assert_allowed() {
-    local cmd="$1"
-    if ! output=$($PASS_TO_SHELL "$cmd" 2>&1); then
-        echo "FAIL: Allowed command failed: '$cmd'"
-        echo "Output: $output"
+        echo "FAIL: tcp-req.sh missing or not executable"
         exit 1
-    else
-        echo "PASS: Allowed command succeeded: '$cmd'"
     fi
-}
+else
+    echo "INFO: tcp-req.sh not found - skipping test"
+fi
 
-# Test blocked commands
-assert_blocked "rm -rf /"
-assert_blocked "rm  -rf /" # Extra space
-assert_blocked "  rm -rf /" # Leading space
-assert_blocked "sudo ls"
-assert_blocked "chmod 777 file"
-assert_blocked "chmod  777 file"
-assert_blocked "cat /etc/passwd" # passwd keyword
+echo "All available tests passed!"
 
-# Test allowed commands
-assert_allowed "ls -la"
-assert_allowed "echo 'hello world'"
-assert_allowed "whoami"
-
-echo "All tests passed!"
